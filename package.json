@@ -1,0 +1,14 @@
+{
+  "name": "acheulean-diorama",
+  "version": "1.0.0",
+  "description": "Biophysikalisches, evolutionsgeschichtliches Isometrie-Diorama (~400.000 v. Chr.)",
+  "main": "src/main.js",
+  "type": "module",
+  "scripts": {
+    "test": "node test/simulate.mjs",
+    "start": "python3 -m http.server 8080"
+  },
+  "keywords": ["simulation", "anthropology", "evolution", "isometric", "biophysics"],
+  "author": "Emanuel Gössler & Community",
+  "license": "MIT"
+}

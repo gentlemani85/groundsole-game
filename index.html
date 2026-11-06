@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Acheuléen-Diorama (~400.000 v. Chr.)</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div id="viewport-container">
+    <div id="status-hint">Werkzeug wählen + Klick in Welt | Ziehen: Bewegen | Rad: Zoom</div>
+    <div id="event-ticker">Das Acheuléen-Diorama erwacht am Flussufer.</div>
+    <canvas id="game-canvas"></canvas>
+  </div>
+
+  <div id="ui-panel">
+    <div class="panel-header">
+      <h1>Acheuléen-Diorama (~400.000 v. Chr.)</h1>
+      <p>Bodenökologie (NPK-Dünger), Pflanzenwachstum & Faustkeil-Subsistenz.</p>
+    </div>
+
+    <!-- Stammes-Vorratslager (am Lagerfeuer) -->
+    <div class="stockpile-card">
+      <div class="stock-item">
+        <span class="stock-label">🔥 Feuer</span>
+        <span class="stock-val" id="stock-fire">100%</span>
+      </div>
+      <div class="stock-item">
+        <span class="stock-label">🪵 Holz</span>
+        <span class="stock-val" id="stock-wood">6</span>
+      </div>
+      <div class="stock-item">
+        <span class="stock-label">🪨 Steine</span>
+        <span class="stock-val" id="stock-stone">3</span>
+      </div>
+      <div class="stock-item">
+        <span class="stock-label">🍇 Beeren</span>
+        <span class="stock-val" id="stock-food">4</span>
+      </div>
+      <div class="stock-item">
+        <span class="stock-label">💧 Wasser</span>
+        <span class="stock-val" id="stock-water">3</span>
+      </div>
+    </div>
+
+    <div class="section-title">Umwelt-Werkzeuge (Randbedingungen)</div>
+    <div class="tool-grid">
+      <button class="tool-btn active" data-tool="inspect">🔍 Info</button>
+      <button class="tool-btn" data-tool="rock">🪨 Felsen</button>
+      <button class="tool-btn" data-tool="tree">🌳 Baum</button>
+      <button class="tool-btn" data-tool="bush">🍇 Strauch</button>
+      <button class="tool-btn" data-tool="fire">🔥 Feuer</button>
+      <button class="tool-btn" data-tool="water">💧 Wasser</button>
+      <button class="tool-btn" data-tool="path">🪨 Pfad</button>
+      <button class="tool-btn" data-tool="grass">🌱 Magerwiese</button>
+      <button class="tool-btn" data-tool="shelter">⛺ Hütte</button>
+    </div>
+
+    <div class="section-title">Akteure & Stoffwechsel (Acheuléen)</div>
+    <div id="inspector-box">
+      <!-- Dynamischer Inhalt -->
+    </div>
+
+    <div class="footer-controls">
+      <button class="speed-btn active" data-speed="1">1x</button>
+      <button class="speed-btn" data-speed="2">2x</button>
+      <button class="speed-btn" data-speed="5">5x</button>
+      <button class="speed-btn" data-speed="10">10x Mega</button>
+      <button class="speed-btn" data-speed="0">⏸</button>
+    </div>
+  </div>
+
+  <!-- Modularer Einstiegspunkt -->
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
