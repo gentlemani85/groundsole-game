@@ -1,6 +1,7 @@
 import { campfireStock, fireState, MAP_SIZE, CAMP_CENTER, SHELTER_CONFIG } from './config.js';
 import { findPath, isTileWalkable } from './pathfinding.js';
 import { findNearestBushWithBerries, findNearestRootDigSpot, findNearestFishingSpot } from './foraging.js';
+import { spookWildlife } from './wildlife.js';
 
 let nextId = 4;
 
@@ -348,6 +349,7 @@ export class Human {
           this.lastMeatYield = meat;
           this.huntTarget = null;
           this.utilityContributed += (meat * 5);
+          spookWildlife(90.0);
           logEvent(`🏹 ${this.name} hat ${aIcon} ${aName} erlegt! (+${meat} Fleisch fürs Lager)`);
           this.setMoveTarget(map, CAMP_CENTER.x, CAMP_CENTER.y, 'deliver_stock');
           return;
@@ -988,6 +990,7 @@ export class Human {
         this.huntTarget.isAlive = false;
         this.carried = '🥩 Wildbret';
         this.lastMeatYield = meat;
+        spookWildlife(90.0);
         this.setMoveTarget(map, CAMP_CENTER.x, CAMP_CENTER.y, 'deliver_stock');
         logEvent(`🏹 ${this.name} hat ein ${aName} erlegt! Er trägt das Fleisch (${meat} Vorrat) ins Lager.`);
         return;
@@ -1004,9 +1007,27 @@ export class Human {
       logEvent(`🥔 ${this.name} hat nahrhafte Wurzelknollen ausgegraben.`);
       return;
     } else if (this.state === 'fishing') {
+      const gx = Math.round(this.x);
+      const gy = Math.round(this.y);
+      const neighbors = [
+        map[gy - 1] && map[gy - 1][gx],
+        map[gy + 1] && map[gy + 1][gx],
+        map[gy] && map[gy][gx - 1],
+        map[gy] && map[gy][gx + 1]
+      ];
+      const wTile = neighbors.find(n => n && n.type === 'water' && (n.fishStock === undefined || n.fishStock > 0));
+      if (wTile && typeof wTile.fishStock === 'number') {
+        wTile.fishStock = Math.max(0, wTile.fishStock - 1);
+        if (wTile.fishStock === 0) {
+          logEvent(`🐟 ${this.name} hat den letzten Fisch an dieser Stelle erbeutet! (Überfischt)`);
+        } else {
+          logEvent(`🐟 ${this.name} hat am Flussufer einen Fisch erbeutet!`);
+        }
+      } else {
+        logEvent(`🐟 ${this.name} hat am Flussufer einen Fisch erbeutet!`);
+      }
       this.carried = '🐟 Flussfisch';
       this.setMoveTarget(map, CAMP_CENTER.x, CAMP_CENTER.y, 'deliver_stock');
-      logEvent(`🐟 ${this.name} hat am Flussufer einen Fisch erbeutet!`);
       return;
     } else if (this.state === 'relieving') {
       this.needs.bladder = 0;

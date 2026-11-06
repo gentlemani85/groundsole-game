@@ -61,14 +61,14 @@ export function findNearestFishingSpot(map, fromX, fromY) {
     for (let x = 1; x < MAP_SIZE - 1; x++) {
       const tile = map[y][x];
       if (tile.type === 'grass' || tile.type === 'path' || tile.isFord) {
-        // Prüfen ob Nachbarkachel Wasser mit ausreichender Tiefe ist
+        // Prüfen ob Nachbarkachel Wasser mit intaktem Fischbestand (> 0) ist (Überfischungs-Schutz)
         const neighbors = [
           map[y - 1] && map[y - 1][x],
           map[y + 1] && map[y + 1][x],
           map[y][x - 1],
           map[y][x + 1]
         ];
-        const waterNeighbor = neighbors.find(n => n && n.type === 'water');
+        const waterNeighbor = neighbors.find(n => n && n.type === 'water' && (n.fishStock === undefined || n.fishStock > 0));
         if (waterNeighbor) {
           const d = Math.hypot(x - fromX, y - fromY);
           if (d < minDist) {

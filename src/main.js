@@ -3,7 +3,7 @@ import { Camera } from './isometric.js';
 import { createMap, updateEcology } from './map.js';
 import { Renderer } from './render.js';
 import { createInitialHumans, maybeSpawnForeignWanderer } from './human.js';
-import { maybeSpawnWildAnimal } from './wildlife.js';
+import { maybeSpawnWildAnimal, updateSpookTimer } from './wildlife.js';
 import { migrationState, computeEcologicalPressure, startMigration, updateMigration } from './migration.js';
 
 // Setup DOM
@@ -12,6 +12,7 @@ const ctx = canvas.getContext('2d');
 const container = document.getElementById('viewport-container');
 const eventTicker = document.getElementById('event-ticker');
 const inspectorBox = document.getElementById('inspector-box');
+const biomeBadgeEl = document.getElementById('biome-badge');
 
 // Migration & Ökologie DOM-Elemente
 const pressureValEl = document.getElementById('pressure-val');
@@ -226,6 +227,11 @@ function updateUI() {
   stockWoodEl.innerText = campfireStock.wood;
   stockFoodEl.innerText = campfireStock.food;
   stockWaterEl.innerText = campfireStock.water;
+
+  // 0. Landschaft & Biom
+  if (biomeBadgeEl && map && map.biome) {
+    biomeBadgeEl.innerText = `${map.biome.icon} ${map.biome.name}`;
+  }
 
   // 1. Weltzeit & Jahreslauf (synchron mit biologischem Alterungstakt)
   const currentYear = Math.floor(START_YEAR + elapsedYears);
@@ -557,8 +563,9 @@ function loop(now) {
     elapsedYears += addY;
   }, logEvent);
 
-  // 2. Wildtier-Spawn & Update
-  maybeSpawnWildAnimal(animals, humans, logEvent);
+  // 2. Wildtier-Spawn & Update (mit Vergrämungs-Abklingzeit & Biom-Fauna)
+  updateSpookTimer(dtSec);
+  maybeSpawnWildAnimal(animals, humans, logEvent, map);
   for (let i = animals.length - 1; i >= 0; i--) {
     const a = animals[i];
     if (!a.isAlive) {

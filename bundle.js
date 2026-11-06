@@ -26,6 +26,18 @@
     repairThreshold: 65
     // Reparatur-Bedarf ab unter 65% Haltbarkeit
   };
+  var STORAGE_LIMITS = {
+    maxFood: 28,
+    // Maximal 28 Einheiten auf offenem Waldboden
+    maxWood: 35,
+    maxStone: 25,
+    maxWater: 20
+  };
+  var SPOILAGE_CONFIG = {
+    decayInterval: 12,
+    // Intervall für biologischen Fäulnis-Zerfall
+    timer: 0
+  };
 
   // src/isometric.js
   var Camera = class {
@@ -58,7 +70,38 @@
   };
 
   // src/map.js
-  function createMap() {
+  var BIOMES = {
+    river_valley: {
+      id: "river_valley",
+      name: "Fluss-Aue",
+      icon: "\u{1F30A}",
+      desc: "Fruchtbares Auenthal mit Schilf, Beeren und reichem Fischbestand.",
+      palette: { grass: "#225522", dryGrass: "#2b5a27", water: "#0284c7" }
+    },
+    steppe: {
+      id: "steppe",
+      name: "Eiszeit-Steppe",
+      icon: "\u{1F33E}",
+      desc: "Karge Tundra. Kaum B\xE4ume, keine Beeren, eisiger Wind \u2013 Heimat der Bisons.",
+      palette: { grass: "#4a5320", dryGrass: "#6b6638", water: "#38bdf8" }
+    },
+    forest: {
+      id: "forest",
+      name: "Dichter Urwald",
+      icon: "\u{1F332}",
+      desc: "Uralte Eichen & Dickicht. Reich an Holz, Wurzeln und Wildschweinen.",
+      palette: { grass: "#1e3f20", dryGrass: "#1b3419", water: "#0ea5e9" }
+    },
+    karst_canyon: {
+      id: "karst_canyon",
+      name: "Felsenschlucht",
+      icon: "\u{1FAA8}",
+      desc: "Schroffe Felsw\xE4nde mit nat\xFCrlichen H\xF6hlen\xFCberh\xE4ngen und Feuerstein.",
+      palette: { grass: "#3a4439", dryGrass: "#444d44", water: "#06b6d4" }
+    }
+  };
+  function createMap(biomeId = "river_valley") {
+    const biome = BIOMES[biomeId] || BIOMES.river_valley;
     const map2 = [];
     for (let y = 0; y < MAP_SIZE; y++) {
       map2[y] = [];
@@ -66,42 +109,161 @@
         let type = "grass";
         let npk = 20 + Math.random() * 25;
         let plant = null;
-        const riverCenterX = 20 + Math.sin(y * 0.4) * 2;
-        const riverWidth = y >= 8 && y <= 12 ? 1.8 : 1.1;
-        if (Math.abs(x - riverCenterX) <= riverWidth) {
-          type = "water";
-          npk = 65;
-        } else if (x >= 15 && x <= 18 && y <= 3 || x === 6 && y === 4) {
-          if (Math.random() < 0.45) type = "rock";
-        } else if (x <= 5 && Math.random() < 0.35) {
-          const treeMaxAge = 900 + Math.random() * 600;
-          plant = {
-            type: "tree",
-            stage: 3,
-            woodStock: 4,
-            seedVariance: Math.random(),
-            maxAge: treeMaxAge,
-            ageTimer: Math.random() * (treeMaxAge * 0.7)
-          };
-          npk = 65;
-        } else if (y >= 20 && Math.random() < 0.25 || Math.hypot(x - CAMP_CENTER.x, y - CAMP_CENTER.y) > 3 && Math.hypot(x - CAMP_CENTER.x, y - CAMP_CENTER.y) < 7 && Math.random() < 0.12) {
-          const bushMaxAge = 700 + Math.random() * 450;
-          plant = {
-            type: "bush",
-            stage: 3,
-            berries: 4,
-            maxBerries: 5,
-            berryTimer: 0,
-            seedVariance: Math.random(),
-            maxAge: bushMaxAge,
-            ageTimer: Math.random() * (bushMaxAge * 0.4),
-            isRootstock: false
-          };
-          npk = 55;
+        let shelter = null;
+        let defaultFish = 0;
+        if (biome.id === "river_valley") {
+          const riverCenterX = 20 + Math.sin(y * 0.4) * 2;
+          const riverWidth = y >= 8 && y <= 12 ? 1.8 : 1.1;
+          if (Math.abs(x - riverCenterX) <= riverWidth) {
+            type = "water";
+            npk = 65;
+            defaultFish = 3;
+          }
+        } else if (biome.id === "steppe") {
+          const inPond1 = Math.hypot(x - 19, y - 7) <= 1.8;
+          const inPond2 = Math.hypot(x - 7, y - 19) <= 1.5;
+          if (inPond1 || inPond2) {
+            type = "water";
+            npk = 45;
+            defaultFish = 1;
+          }
+        } else if (biome.id === "forest") {
+          const brookX = Math.round(18 + Math.sin(y * 0.5) * 1.5);
+          if (x === brookX) {
+            type = "water";
+            npk = 70;
+            defaultFish = 2;
+          }
+        } else if (biome.id === "karst_canyon") {
+          const canyonStreamX = Math.round(19 + Math.cos(y * 0.35) * 1.4);
+          if (Math.abs(x - canyonStreamX) <= 1) {
+            type = "water";
+            npk = 50;
+            defaultFish = 2;
+          }
+        }
+        if (type !== "water") {
+          if (biome.id === "karst_canyon") {
+            if (x <= 6 && Math.random() < 0.65 || x >= 14 && x <= 17 && Math.random() < 0.55 || Math.random() < 0.12) {
+              type = "rock";
+            }
+            if (x === CAMP_CENTER.x - 2 && y === CAMP_CENTER.y - 1 || x === CAMP_CENTER.x + 2 && y === CAMP_CENTER.y - 2) {
+              type = "shelter";
+              shelter = { condition: 100, capacity: 2, isCave: true };
+            }
+          } else if (biome.id === "steppe") {
+            if (Math.random() < 0.08) type = "rock";
+          } else if (biome.id === "forest") {
+            if (Math.random() < 0.04) type = "rock";
+          } else {
+            if (x >= 15 && x <= 18 && y <= 3 || x === 6 && y === 4) {
+              if (Math.random() < 0.45) type = "rock";
+            }
+          }
+        }
+        if (type === "grass") {
+          const isNearCamp = Math.hypot(x - CAMP_CENTER.x, y - CAMP_CENTER.y) <= 2.2;
+          if (biome.id === "forest") {
+            if (!isNearCamp && Math.random() < 0.55) {
+              const treeMaxAge = 1e3 + Math.random() * 500;
+              plant = {
+                type: "tree",
+                stage: 3,
+                woodStock: 4,
+                seedVariance: Math.random(),
+                maxAge: treeMaxAge,
+                ageTimer: Math.random() * (treeMaxAge * 0.7)
+              };
+              npk = 75;
+            } else if (Math.random() < 0.08) {
+              plant = {
+                type: "bush",
+                stage: 2,
+                berries: 2,
+                maxBerries: 4,
+                berryTimer: 0,
+                seedVariance: Math.random(),
+                maxAge: 600,
+                ageTimer: 0,
+                isRootstock: false
+              };
+            }
+          } else if (biome.id === "steppe") {
+            if (!isNearCamp && Math.random() < 0.012) {
+              plant = {
+                type: "tree",
+                stage: 2,
+                woodStock: 2,
+                seedVariance: Math.random(),
+                maxAge: 700,
+                ageTimer: 0
+              };
+            }
+          } else if (biome.id === "karst_canyon") {
+            if (!isNearCamp && Math.random() < 0.1) {
+              plant = {
+                type: "tree",
+                stage: 3,
+                woodStock: 3,
+                seedVariance: Math.random(),
+                maxAge: 850,
+                ageTimer: 0
+              };
+            } else if (Math.random() < 0.08) {
+              plant = {
+                type: "bush",
+                stage: 2,
+                berries: 2,
+                maxBerries: 4,
+                berryTimer: 0,
+                seedVariance: Math.random(),
+                maxAge: 600,
+                ageTimer: 0,
+                isRootstock: false
+              };
+            }
+          } else {
+            if (x <= 5 && Math.random() < 0.35) {
+              const treeMaxAge = 900 + Math.random() * 600;
+              plant = {
+                type: "tree",
+                stage: 3,
+                woodStock: 4,
+                seedVariance: Math.random(),
+                maxAge: treeMaxAge,
+                ageTimer: Math.random() * (treeMaxAge * 0.7)
+              };
+              npk = 65;
+            } else if (y >= 20 && Math.random() < 0.25 || Math.hypot(x - CAMP_CENTER.x, y - CAMP_CENTER.y) > 3 && Math.hypot(x - CAMP_CENTER.x, y - CAMP_CENTER.y) < 7 && Math.random() < 0.12) {
+              const bushMaxAge = 700 + Math.random() * 450;
+              plant = {
+                type: "bush",
+                stage: 3,
+                berries: 3,
+                maxBerries: 5,
+                berryTimer: 0,
+                seedVariance: Math.random(),
+                maxAge: bushMaxAge,
+                ageTimer: Math.random() * (bushMaxAge * 0.4),
+                isRootstock: false
+              };
+              npk = 55;
+            }
+          }
+        }
+        let roots = 0;
+        if (type === "grass" && !plant) {
+          if (biome.id === "steppe") {
+            if (Math.random() < 0.5) roots = 1 + Math.floor(Math.random() * 2);
+          } else if (biome.id === "forest") {
+            if (Math.random() < 0.45) roots = 2;
+          } else {
+            if (Math.random() < 0.35) roots = 1 + Math.floor(Math.random() * 2);
+          }
         }
         let isDesirePath = false;
         let trample = 0;
-        if (y === CAMP_CENTER.y && x >= CAMP_CENTER.x && x <= 19) {
+        if (biome.id === "river_valley" && y === CAMP_CENTER.y && x >= CAMP_CENTER.x && x <= 19) {
           type = "path";
           isDesirePath = true;
           trample = 90;
@@ -119,25 +281,25 @@
         }
         const flowerDots = [];
         if (npk < 32 && type === "grass") {
-          const count = 3 + Math.floor(Math.random() * 4);
+          const count = 2 + Math.floor(Math.random() * 3);
           for (let i = 0; i < count; i++) {
             flowerDots.push({
               dx: (Math.random() - 0.5) * 22,
               dy: (Math.random() - 0.5) * 11,
-              color: Math.random() < 0.35 ? "#f43f5e" : Math.random() < 0.65 ? "#fbbf24" : "#60a5fa",
-              size: 0.9 + Math.random() * 0.8
+              color: biome.id === "steppe" ? "#eab308" : Math.random() < 0.5 ? "#f43f5e" : "#60a5fa",
+              size: 0.9 + Math.random() * 0.7
             });
           }
-        }
-        let roots = 0;
-        if (type === "grass" && !plant && Math.random() < 0.4) {
-          roots = 1 + Math.floor(Math.random() * 2);
         }
         map2[y][x] = {
           type,
           npk,
           plant,
           roots,
+          shelter,
+          fishStock: defaultFish,
+          maxFishStock: defaultFish,
+          fishRegenTimer: 0,
           poop: null,
           flowerDots,
           trample,
@@ -165,12 +327,35 @@
         }
       }
     }
+    map2.biomeId = biome.id;
+    map2.biome = biome;
     return map2;
   }
   function updateEcology(map2, dtSec, logEvent2) {
+    SPOILAGE_CONFIG.timer = (SPOILAGE_CONFIG.timer || 0) + dtSec;
+    if (SPOILAGE_CONFIG.timer >= SPOILAGE_CONFIG.decayInterval) {
+      SPOILAGE_CONFIG.timer = 0;
+      if (campfireStock.food > 0) {
+        const loss = campfireStock.food > 18 ? 2 : 1;
+        campfireStock.food = Math.max(0, campfireStock.food - loss);
+        if (Math.random() < 0.25) {
+          logEvent2(`\u{1F342} Vorratsverderb: Fleisch & Beeren sind im feuchten Erdlager verfault (-${loss}).`);
+        }
+      }
+    }
+    if (campfireStock.food > STORAGE_LIMITS.maxFood) {
+      campfireStock.food = STORAGE_LIMITS.maxFood;
+    }
     for (let y = 0; y < MAP_SIZE; y++) {
       for (let x = 0; x < MAP_SIZE; x++) {
         const tile = map2[y][x];
+        if (tile.type === "water" && tile.fishStock < tile.maxFishStock) {
+          tile.fishRegenTimer = (tile.fishRegenTimer || 0) + dtSec;
+          if (tile.fishRegenTimer >= 140) {
+            tile.fishStock++;
+            tile.fishRegenTimer = 0;
+          }
+        }
         if (tile.poop) {
           tile.poop.timer -= dtSec;
           if (tile.poop.timer <= 0) {
@@ -178,7 +363,7 @@
             tile.poop = null;
             tile.flowerDots = [];
             if (!tile.plant && tile.type === "grass") {
-              if (Math.random() < 0.5) {
+              if (map2.biomeId !== "steppe" && Math.random() < 0.5) {
                 tile.plant = {
                   type: "bush",
                   stage: 1,
@@ -186,8 +371,9 @@
                   berries: 0,
                   berryTimer: 0,
                   seedVariance: Math.random(),
-                  maxAge: 350 + Math.random() * 250,
-                  ageTimer: 0
+                  maxAge: 500,
+                  ageTimer: 0,
+                  isRootstock: false
                 };
                 logEvent2(`\u{1F331} Wilder Beerenstrauch aus Kot gekeimt! [${x}, ${y}]`);
               } else {
@@ -208,7 +394,7 @@
         if (tile.type === "grass" && tile.npk < 45) {
           tile.npk = Math.min(45, tile.npk + dtSec * 0.08);
         }
-        if (tile.type === "grass" && (!tile.roots || tile.roots < 3) && tile.npk >= 30 && Math.random() < 3e-3 * dtSec) {
+        if (tile.type === "grass" && (!tile.roots || tile.roots < 3) && tile.npk >= 30 && Math.random() < 2e-3 * dtSec) {
           tile.roots = (tile.roots || 0) + 1;
         }
         if (tile.trample && tile.trample > 0) {
@@ -218,20 +404,8 @@
           tile.type = "grass";
           tile.isDesirePath = false;
           tile.trample = 0;
-          if (tile.npk < 32 && (!tile.flowerDots || tile.flowerDots.length === 0)) {
-            tile.flowerDots = [];
-            const count = 2 + Math.floor(Math.random() * 3);
-            for (let i = 0; i < count; i++) {
-              tile.flowerDots.push({
-                dx: (Math.random() - 0.5) * 22,
-                dy: (Math.random() - 0.5) * 11,
-                color: Math.random() < 0.5 ? "#f43f5e" : "#fbbf24",
-                size: 0.9 + Math.random() * 0.7
-              });
-            }
-          }
         }
-        if (tile.type === "shelter") {
+        if (tile.type === "shelter" && !tile.shelter?.isCave) {
           if (!tile.shelter) {
             tile.shelter = { condition: 100, capacity: SHELTER_CONFIG.capacity };
           }
@@ -320,39 +494,9 @@
           }
           if (p.type === "bush" && p.stage >= 2 && p.berries < (p.maxBerries || 5) && !p.isRootstock) {
             p.berryTimer = (p.berryTimer || 0) + dtSec;
-            if (p.berryTimer >= 9) {
+            if (p.berryTimer >= 10) {
               p.berries++;
               p.berryTimer = 0;
-            }
-          }
-          const seedChance = (p.type === "bush" ? 4e-4 : 8e-4) * dtSec;
-          if (p.stage === 3 && Math.random() < seedChance) {
-            const nx = Math.max(0, Math.min(MAP_SIZE - 1, x + (Math.random() < 0.5 ? -1 : 1)));
-            const ny = Math.max(0, Math.min(MAP_SIZE - 1, y + (Math.random() < 0.5 ? -1 : 1)));
-            const nTile = map2[ny][nx];
-            if (nTile.type === "grass" && !nTile.plant) {
-              let neighborCount = 0;
-              for (let dy = -1; dy <= 1; dy++) {
-                for (let dx = -1; dx <= 1; dx++) {
-                  const ct = map2[ny + dy] && map2[ny + dy][nx + dx];
-                  if (ct && ct.plant) neighborCount++;
-                }
-              }
-              if (neighborCount <= 2) {
-                const maxA = p.type === "bush" ? 350 + Math.random() * 250 : 900 + Math.random() * 600;
-                nTile.plant = {
-                  type: p.type,
-                  stage: 1,
-                  growthTimer: 0,
-                  berries: 0,
-                  berryTimer: 0,
-                  woodStock: 3,
-                  seedVariance: Math.random(),
-                  maxAge: maxA,
-                  ageTimer: 0
-                };
-                logEvent2(`\u{1F343} Wind hat Samen verweht: Neuer ${p.type === "bush" ? "Strauch" : "Baum"} keimt bei [${nx}, ${ny}].`);
-              }
             }
           }
         }
@@ -370,6 +514,7 @@
     render(map2, humans2, animals2, hoveredGrid2, selectedHumanId2, dtSec, fireIntensity = 100) {
       const ctx2 = this.ctx;
       this.waterPhase += dtSec * 1.5;
+      this.biomeId = map2.biomeId || "river_valley";
       ctx2.clearRect(0, 0, this.cam.canvas.width, this.cam.canvas.height);
       for (let y = 0; y < MAP_SIZE; y++) {
         for (let x = 0; x < MAP_SIZE; x++) {
@@ -448,19 +593,42 @@
       let fillColor;
       if (tile.type === "grass") {
         const factor = Math.min(1, Math.max(0, tile.npk / 100));
-        const r = Math.round(124 - factor * 86);
-        const g = Math.round(142 - factor * 64);
-        const b = Math.round(86 - factor * 56);
-        fillColor = `rgb(${r}, ${g}, ${b})`;
+        if (this.biomeId === "steppe") {
+          const r = Math.round(156 - factor * 42);
+          const g = Math.round(144 - factor * 38);
+          const b = Math.round(68 - factor * 28);
+          fillColor = `rgb(${r}, ${g}, ${b})`;
+        } else if (this.biomeId === "forest") {
+          const r = Math.round(35 - factor * 18);
+          const g = Math.round(85 + factor * 22);
+          const b = Math.round(32 + factor * 8);
+          fillColor = `rgb(${r}, ${g}, ${b})`;
+        } else if (this.biomeId === "karst_canyon") {
+          const r = Math.round(102 - factor * 28);
+          const g = Math.round(116 - factor * 24);
+          const b = Math.round(98 - factor * 18);
+          fillColor = `rgb(${r}, ${g}, ${b})`;
+        } else {
+          const r = Math.round(124 - factor * 86);
+          const g = Math.round(142 - factor * 64);
+          const b = Math.round(86 - factor * 56);
+          fillColor = `rgb(${r}, ${g}, ${b})`;
+        }
       } else if (tile.type === "water") {
         const shimmer = Math.sin(this.waterPhase + gx * 0.8 + gy * 0.5) * 8;
-        fillColor = `rgb(${34 + shimmer}, ${105 + shimmer}, ${136 + shimmer})`;
+        if (this.biomeId === "karst_canyon") {
+          fillColor = `rgb(${22 + shimmer}, ${120 + shimmer}, ${136 + shimmer})`;
+        } else if (this.biomeId === "forest") {
+          fillColor = `rgb(${24 + shimmer}, ${88 + shimmer}, ${98 + shimmer})`;
+        } else {
+          fillColor = `rgb(${34 + shimmer}, ${105 + shimmer}, ${136 + shimmer})`;
+        }
       } else if (tile.type === "path") {
-        fillColor = "#8a7452";
+        fillColor = this.biomeId === "karst_canyon" ? "#767472" : this.biomeId === "steppe" ? "#a28862" : "#8a7452";
       } else if (tile.type === "fire") {
         fillColor = "#3c362d";
       } else if (tile.type === "rock") {
-        fillColor = "#5f6977";
+        fillColor = this.biomeId === "karst_canyon" ? "#848f9d" : this.biomeId === "steppe" ? "#8e806d" : "#5f6977";
       } else if (tile.type === "shelter") {
         fillColor = "#4a3d2e";
       }
@@ -894,104 +1062,198 @@
       const cy = pos.y + TILE_H / 2 * zoom;
       ctx2.save();
       const species = a.species || "deer";
-      if (species === "hare") {
+      if (species === "bison") {
+        const shadowW = 12 * zoom;
+        const shadowH = 5.2 * zoom;
         ctx2.beginPath();
-        ctx2.ellipse(cx, cy + 1 * zoom, 3.2 * zoom, 1.8 * zoom, 0, 0, Math.PI * 2);
-        ctx2.fillStyle = "rgba(0,0,0,0.22)";
+        ctx2.ellipse(cx, cy + 2 * zoom, shadowW, shadowH, 0, 0, Math.PI * 2);
+        ctx2.fillStyle = "rgba(0,0,0,0.36)";
         ctx2.fill();
-        let hop = a.state === "fleeing" ? Math.abs(Math.sin(Date.now() * 0.03)) * 6 * zoom : 0;
-        const bodyY = cy - 3 * zoom - hop;
-        ctx2.fillStyle = "#b45309";
+        let hop = a.state === "fleeing" ? Math.abs(Math.sin(Date.now() * 0.015)) * 2.5 * zoom : 0;
+        const bodyY = cy - 8 * zoom - hop;
+        ctx2.fillStyle = "#1c1917";
+        ctx2.fillRect(cx - 7 * zoom, bodyY + 3 * zoom, 2.4 * zoom, 5 * zoom);
+        ctx2.fillRect(cx - 3 * zoom, bodyY + 3 * zoom, 2.4 * zoom, 5 * zoom);
+        ctx2.fillRect(cx + 3 * zoom, bodyY + 3 * zoom, 2.4 * zoom, 5 * zoom);
+        ctx2.fillRect(cx + 6 * zoom, bodyY + 3 * zoom, 2.4 * zoom, 5 * zoom);
+        ctx2.fillStyle = "#292524";
         ctx2.beginPath();
-        ctx2.ellipse(cx, bodyY, 3.2 * zoom, 2.2 * zoom, 0, 0, Math.PI * 2);
+        ctx2.ellipse(cx - 3 * zoom, bodyY + 1 * zoom, 7.5 * zoom, 5.2 * zoom, 0, 0, Math.PI * 2);
         ctx2.fill();
+        ctx2.fillStyle = "#1c1917";
         ctx2.beginPath();
-        ctx2.arc(cx + 2.5 * zoom, bodyY - 1.8 * zoom, 1.6 * zoom, 0, Math.PI * 2);
+        ctx2.ellipse(cx + 2.5 * zoom, bodyY - 3.5 * zoom, 7 * zoom, 6.2 * zoom, 0, 0, Math.PI * 2);
         ctx2.fill();
-        ctx2.strokeStyle = "#78350f";
-        ctx2.lineWidth = 1 * zoom;
+        ctx2.fillStyle = "#18110d";
         ctx2.beginPath();
-        ctx2.moveTo(cx + 2 * zoom, bodyY - 3 * zoom);
-        ctx2.lineTo(cx + 1.5 * zoom, bodyY - 6.5 * zoom);
-        ctx2.moveTo(cx + 3 * zoom, bodyY - 3 * zoom);
-        ctx2.lineTo(cx + 3.8 * zoom, bodyY - 6.5 * zoom);
-        ctx2.stroke();
-      } else if (species === "boar") {
-        ctx2.beginPath();
-        ctx2.ellipse(cx, cy + 2 * zoom, 6.8 * zoom, 3.2 * zoom, 0, 0, Math.PI * 2);
-        ctx2.fillStyle = "rgba(0,0,0,0.30)";
+        ctx2.ellipse(cx + 7.5 * zoom, bodyY + 0.5 * zoom, 3.8 * zoom, 4.2 * zoom, 0, 0, Math.PI * 2);
         ctx2.fill();
-        let hop = a.state === "fleeing" ? Math.abs(Math.sin(Date.now() * 0.02)) * 3 * zoom : 0;
-        const bodyY = cy - 5 * zoom - hop;
-        ctx2.fillStyle = "#291b15";
+        ctx2.fillStyle = "#0f172a";
         ctx2.beginPath();
-        ctx2.ellipse(cx, bodyY, 6.5 * zoom, 4.2 * zoom, 0, 0, Math.PI * 2);
-        ctx2.fill();
-        ctx2.fillStyle = "#3e2723";
-        ctx2.beginPath();
-        ctx2.moveTo(cx + 3 * zoom, bodyY + 1 * zoom);
-        ctx2.lineTo(cx + 8 * zoom, bodyY + 1.5 * zoom);
-        ctx2.lineTo(cx + 4 * zoom, bodyY - 3.5 * zoom);
+        ctx2.moveTo(cx + 6 * zoom, bodyY + 3 * zoom);
+        ctx2.lineTo(cx + 8.5 * zoom, bodyY + 3 * zoom);
+        ctx2.lineTo(cx + 7.5 * zoom, bodyY + 7 * zoom);
         ctx2.closePath();
         ctx2.fill();
         ctx2.strokeStyle = "#f8fafc";
-        ctx2.lineWidth = 1.2 * zoom;
+        ctx2.lineWidth = 2.2 * zoom;
         ctx2.beginPath();
-        ctx2.moveTo(cx + 6 * zoom, bodyY + 1.5 * zoom);
-        ctx2.lineTo(cx + 7 * zoom, bodyY - 1.2 * zoom);
+        ctx2.moveTo(cx + 6.5 * zoom, bodyY - 2 * zoom);
+        ctx2.quadraticCurveTo(cx + 8.5 * zoom, bodyY - 8 * zoom, cx + 5.5 * zoom, bodyY - 9 * zoom);
+        ctx2.moveTo(cx + 8.5 * zoom, bodyY - 2 * zoom);
+        ctx2.quadraticCurveTo(cx + 10.5 * zoom, bodyY - 8 * zoom, cx + 8 * zoom, bodyY - 9.5 * zoom);
         ctx2.stroke();
-      } else if (species === "bison") {
+        ctx2.strokeStyle = "#0f172a";
+        ctx2.lineWidth = 2 * zoom;
         ctx2.beginPath();
-        ctx2.ellipse(cx, cy + 2 * zoom, 9.8 * zoom, 4.5 * zoom, 0, 0, Math.PI * 2);
-        ctx2.fillStyle = "rgba(0,0,0,0.35)";
+        ctx2.moveTo(cx + 6 * zoom, bodyY - 8.2 * zoom);
+        ctx2.lineTo(cx + 5.5 * zoom, bodyY - 9 * zoom);
+        ctx2.moveTo(cx + 8.5 * zoom, bodyY - 8.8 * zoom);
+        ctx2.lineTo(cx + 8 * zoom, bodyY - 9.5 * zoom);
+        ctx2.stroke();
+        ctx2.font = `bold ${Math.max(9, 9 * zoom)}px sans-serif`;
+        ctx2.textAlign = "center";
+        ctx2.fillStyle = "#fef08a";
+        ctx2.fillText(`\u{1F9AC} Ur-Bison (15 Fleisch)`, cx, bodyY - 12 * zoom);
+      } else if (species === "boar") {
+        const shadowW = 7.5 * zoom;
+        const shadowH = 3.4 * zoom;
+        ctx2.beginPath();
+        ctx2.ellipse(cx, cy + 2 * zoom, shadowW, shadowH, 0, 0, Math.PI * 2);
+        ctx2.fillStyle = "rgba(0,0,0,0.30)";
         ctx2.fill();
-        let hop = a.state === "fleeing" ? Math.abs(Math.sin(Date.now() * 0.015)) * 2 * zoom : 0;
-        const bodyY = cy - 7 * zoom - hop;
+        let hop = a.state === "fleeing" ? Math.abs(Math.sin(Date.now() * 0.022)) * 3 * zoom : 0;
+        const bodyY = cy - 5.5 * zoom - hop;
         ctx2.fillStyle = "#1c1917";
+        ctx2.fillRect(cx - 4.5 * zoom, bodyY + 2.5 * zoom, 1.8 * zoom, 4 * zoom);
+        ctx2.fillRect(cx - 1.5 * zoom, bodyY + 2.5 * zoom, 1.8 * zoom, 4 * zoom);
+        ctx2.fillRect(cx + 2.5 * zoom, bodyY + 2.5 * zoom, 1.8 * zoom, 4 * zoom);
+        ctx2.fillRect(cx + 5 * zoom, bodyY + 2.5 * zoom, 1.8 * zoom, 4 * zoom);
+        ctx2.fillStyle = "#3a2318";
         ctx2.beginPath();
-        ctx2.ellipse(cx - 2 * zoom, bodyY + 1 * zoom, 7.5 * zoom, 5 * zoom, 0, 0, Math.PI * 2);
+        ctx2.ellipse(cx, bodyY, 6.8 * zoom, 4.4 * zoom, 0, 0, Math.PI * 2);
         ctx2.fill();
-        ctx2.fillStyle = "#292524";
+        ctx2.fillStyle = "#1c110a";
         ctx2.beginPath();
-        ctx2.ellipse(cx + 2.5 * zoom, bodyY - 2.5 * zoom, 6.2 * zoom, 5.2 * zoom, 0, 0, Math.PI * 2);
+        ctx2.ellipse(cx - 1 * zoom, bodyY - 3.2 * zoom, 5.5 * zoom, 1.8 * zoom, 0, 0, Math.PI * 2);
         ctx2.fill();
+        ctx2.fillStyle = "#2f1a11";
         ctx2.beginPath();
-        ctx2.arc(cx + 6.5 * zoom, bodyY + 1 * zoom, 3.2 * zoom, 0, Math.PI * 2);
+        ctx2.moveTo(cx + 2 * zoom, bodyY + 1.5 * zoom);
+        ctx2.lineTo(cx + 8.5 * zoom, bodyY + 1.8 * zoom);
+        ctx2.lineTo(cx + 4 * zoom, bodyY - 3.5 * zoom);
+        ctx2.closePath();
         ctx2.fill();
-        ctx2.strokeStyle = "#e2e8f0";
+        ctx2.fillStyle = "#fb923c";
+        ctx2.beginPath();
+        ctx2.ellipse(cx + 8.2 * zoom, bodyY + 1.8 * zoom, 1.2 * zoom, 1.8 * zoom, 0, 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.strokeStyle = "#ffffff";
+        ctx2.lineWidth = 1.8 * zoom;
+        ctx2.beginPath();
+        ctx2.moveTo(cx + 6.8 * zoom, bodyY + 2.2 * zoom);
+        ctx2.lineTo(cx + 7.8 * zoom, bodyY - 1.5 * zoom);
+        ctx2.moveTo(cx + 5.5 * zoom, bodyY + 2 * zoom);
+        ctx2.lineTo(cx + 6.2 * zoom, bodyY - 1.2 * zoom);
+        ctx2.stroke();
+        ctx2.font = `bold ${Math.max(9, 9 * zoom)}px sans-serif`;
+        ctx2.textAlign = "center";
+        ctx2.fillStyle = "#fed7aa";
+        ctx2.fillText(`\u{1F417} Wildschwein (7 Fleisch)`, cx, bodyY - 9 * zoom);
+      } else if (species === "hare") {
+        const shadowW = 3.6 * zoom;
+        const shadowH = 1.8 * zoom;
+        ctx2.beginPath();
+        ctx2.ellipse(cx, cy + 1 * zoom, shadowW, shadowH, 0, 0, Math.PI * 2);
+        ctx2.fillStyle = "rgba(0,0,0,0.22)";
+        ctx2.fill();
+        let hop = a.state === "fleeing" || a.state === "moving" ? Math.abs(Math.sin(Date.now() * 0.028)) * 6.5 * zoom : 0;
+        const bodyY = cy - 3.5 * zoom - hop;
+        ctx2.fillStyle = "#d97706";
+        ctx2.beginPath();
+        ctx2.ellipse(cx, bodyY, 3.6 * zoom, 2.5 * zoom, 0, 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.fillStyle = "#fef3c7";
+        ctx2.beginPath();
+        ctx2.ellipse(cx + 0.5 * zoom, bodyY + 1 * zoom, 2.4 * zoom, 1.2 * zoom, 0, 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.fillStyle = "#ffffff";
+        ctx2.beginPath();
+        ctx2.arc(cx - 3.6 * zoom, bodyY - 0.5 * zoom, 1.2 * zoom, 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.fillStyle = "#b45309";
+        ctx2.beginPath();
+        ctx2.arc(cx + 2.8 * zoom, bodyY - 2 * zoom, 1.9 * zoom, 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.fillStyle = "#b45309";
+        ctx2.strokeStyle = "#92400e";
         ctx2.lineWidth = 1.5 * zoom;
         ctx2.beginPath();
-        ctx2.moveTo(cx + 5.5 * zoom, bodyY - 1 * zoom);
-        ctx2.quadraticCurveTo(cx + 7.5 * zoom, bodyY - 5 * zoom, cx + 5 * zoom, bodyY - 6.5 * zoom);
+        ctx2.moveTo(cx + 2 * zoom, bodyY - 3.2 * zoom);
+        ctx2.lineTo(cx + 1.2 * zoom, bodyY - 8.5 * zoom);
+        ctx2.moveTo(cx + 3.4 * zoom, bodyY - 3.2 * zoom);
+        ctx2.lineTo(cx + 3.8 * zoom, bodyY - 8.8 * zoom);
         ctx2.stroke();
-      } else {
+        ctx2.strokeStyle = "#1e293b";
+        ctx2.lineWidth = 1.6 * zoom;
         ctx2.beginPath();
-        ctx2.ellipse(cx, cy + 2 * zoom, 6.5 * zoom, 3 * zoom, 0, 0, Math.PI * 2);
+        ctx2.moveTo(cx + 1.4 * zoom, bodyY - 7.5 * zoom);
+        ctx2.lineTo(cx + 1.2 * zoom, bodyY - 8.5 * zoom);
+        ctx2.moveTo(cx + 3.7 * zoom, bodyY - 7.8 * zoom);
+        ctx2.lineTo(cx + 3.8 * zoom, bodyY - 8.8 * zoom);
+        ctx2.stroke();
+        ctx2.font = `bold ${Math.max(9, 9 * zoom)}px sans-serif`;
+        ctx2.textAlign = "center";
+        ctx2.fillStyle = "#fef08a";
+        ctx2.fillText(`\u{1F407} Feldhase (2 Fleisch)`, cx, bodyY - 11 * zoom);
+      } else {
+        const shadowW = 7 * zoom;
+        const shadowH = 3.2 * zoom;
+        ctx2.beginPath();
+        ctx2.ellipse(cx, cy + 2 * zoom, shadowW, shadowH, 0, 0, Math.PI * 2);
         ctx2.fillStyle = "rgba(0,0,0,0.28)";
         ctx2.fill();
-        let hop = a.state === "fleeing" ? Math.abs(Math.sin(Date.now() * 0.02)) * 4 * zoom : 0;
-        const bodyY = cy - 6 * zoom - hop;
-        ctx2.fillStyle = "#92400e";
+        let hop = a.state === "fleeing" ? Math.abs(Math.sin(Date.now() * 0.02)) * 4.5 * zoom : 0;
+        const bodyY = cy - 7 * zoom - hop;
+        ctx2.fillStyle = "#78350f";
+        ctx2.fillRect(cx - 4.5 * zoom, bodyY + 2.5 * zoom, 1.4 * zoom, 6 * zoom);
+        ctx2.fillRect(cx - 2 * zoom, bodyY + 2.5 * zoom, 1.4 * zoom, 6 * zoom);
+        ctx2.fillRect(cx + 2 * zoom, bodyY + 2.5 * zoom, 1.4 * zoom, 6 * zoom);
+        ctx2.fillRect(cx + 4.5 * zoom, bodyY + 2.5 * zoom, 1.4 * zoom, 6 * zoom);
+        ctx2.fillStyle = "#b45309";
         ctx2.beginPath();
-        ctx2.ellipse(cx, bodyY, 6 * zoom, 3.5 * zoom, 0, 0, Math.PI * 2);
+        ctx2.ellipse(cx, bodyY, 6.2 * zoom, 3.6 * zoom, 0, 0, Math.PI * 2);
         ctx2.fill();
+        ctx2.fillStyle = "#9a3412";
         ctx2.beginPath();
-        ctx2.moveTo(cx + 3 * zoom, bodyY);
-        ctx2.lineTo(cx + 7 * zoom, bodyY - 6 * zoom);
-        ctx2.lineTo(cx + 4 * zoom, bodyY - 6 * zoom);
+        ctx2.moveTo(cx + 2.5 * zoom, bodyY);
+        ctx2.lineTo(cx + 6.8 * zoom, bodyY - 6.5 * zoom);
+        ctx2.lineTo(cx + 4.2 * zoom, bodyY - 6.5 * zoom);
         ctx2.closePath();
         ctx2.fill();
         ctx2.beginPath();
-        ctx2.arc(cx + 6.5 * zoom, bodyY - 6.5 * zoom, 2.2 * zoom, 0, Math.PI * 2);
+        ctx2.arc(cx + 6.5 * zoom, bodyY - 7 * zoom, 2.4 * zoom, 0, Math.PI * 2);
         ctx2.fill();
         ctx2.strokeStyle = "#451a03";
-        ctx2.lineWidth = 1.2 * zoom;
+        ctx2.lineWidth = 1.4 * zoom;
         ctx2.beginPath();
-        ctx2.moveTo(cx + 6 * zoom, bodyY - 8 * zoom);
-        ctx2.lineTo(cx + 5 * zoom, bodyY - 12 * zoom);
-        ctx2.moveTo(cx + 7 * zoom, bodyY - 8 * zoom);
-        ctx2.lineTo(cx + 9 * zoom, bodyY - 12 * zoom);
+        ctx2.moveTo(cx + 6 * zoom, bodyY - 9 * zoom);
+        ctx2.lineTo(cx + 4.5 * zoom, bodyY - 14 * zoom);
+        ctx2.moveTo(cx + 7.2 * zoom, bodyY - 9 * zoom);
+        ctx2.lineTo(cx + 9.5 * zoom, bodyY - 14.5 * zoom);
+        ctx2.moveTo(cx + 5.5 * zoom, bodyY - 11 * zoom);
+        ctx2.lineTo(cx + 3.2 * zoom, bodyY - 12.5 * zoom);
+        ctx2.moveTo(cx + 4.8 * zoom, bodyY - 13 * zoom);
+        ctx2.lineTo(cx + 3 * zoom, bodyY - 15 * zoom);
+        ctx2.moveTo(cx + 8 * zoom, bodyY - 11 * zoom);
+        ctx2.lineTo(cx + 10.5 * zoom, bodyY - 12.5 * zoom);
+        ctx2.moveTo(cx + 9 * zoom, bodyY - 13 * zoom);
+        ctx2.lineTo(cx + 11.2 * zoom, bodyY - 15 * zoom);
         ctx2.stroke();
+        ctx2.font = `bold ${Math.max(9, 9 * zoom)}px sans-serif`;
+        ctx2.textAlign = "center";
+        ctx2.fillStyle = "#fed7aa";
+        ctx2.fillText(`\u{1F98C} Ur-Hirsch (5 Fleisch)`, cx, bodyY - 16 * zoom);
       }
       ctx2.restore();
     }
@@ -1242,7 +1504,7 @@
             map2[y][x - 1],
             map2[y][x + 1]
           ];
-          const waterNeighbor = neighbors.find((n) => n && n.type === "water");
+          const waterNeighbor = neighbors.find((n) => n && n.type === "water" && (n.fishStock === void 0 || n.fishStock > 0));
           if (waterNeighbor) {
             const d = Math.hypot(x - fromX, y - fromY);
             if (d < minDist) {
@@ -1254,6 +1516,258 @@
       }
     }
     return bestSpot;
+  }
+
+  // src/wildlife.js
+  var nextAnimalId = 1;
+  var spookedTimer = 0;
+  function spookWildlife(seconds = 90) {
+    spookedTimer = Math.max(spookedTimer, seconds);
+  }
+  function updateSpookTimer(dt) {
+    if (spookedTimer > 0) {
+      spookedTimer = Math.max(0, spookedTimer - dt);
+    }
+  }
+  var ANIMAL_SPECIES = {
+    deer: {
+      species: "deer",
+      name: "Ur-Hirsch",
+      icon: "\u{1F98C}",
+      meatYield: 5,
+      maxStamina: 100,
+      speedRun: 2.3,
+      speedWalk: 0.8,
+      fleeDist: 5.5,
+      toughness: 1,
+      habitat: "all"
+    },
+    boar: {
+      species: "boar",
+      name: "Wildschwein",
+      icon: "\u{1F417}",
+      meatYield: 7,
+      maxStamina: 120,
+      speedRun: 1.85,
+      speedWalk: 0.7,
+      fleeDist: 4.5,
+      toughness: 1,
+      habitat: "forest"
+    },
+    bison: {
+      species: "bison",
+      name: "Ur-Bison",
+      icon: "\u{1F9AC}",
+      meatYield: 15,
+      maxStamina: 240,
+      speedRun: 1.45,
+      speedWalk: 0.55,
+      fleeDist: 4,
+      toughness: 2,
+      habitat: "grass"
+    },
+    hare: {
+      species: "hare",
+      name: "Feldhase",
+      icon: "\u{1F407}",
+      meatYield: 2,
+      maxStamina: 40,
+      speedRun: 2.8,
+      speedWalk: 0.9,
+      fleeDist: 3.5,
+      toughness: 1,
+      habitat: "grass"
+    }
+  };
+  var WildAnimal = class {
+    constructor(x, y, speciesKey = "deer") {
+      this.id = nextAnimalId++;
+      const spec = ANIMAL_SPECIES[speciesKey] || ANIMAL_SPECIES.deer;
+      this.species = spec.species;
+      this.name = spec.name;
+      this.icon = spec.icon;
+      this.meatYield = spec.meatYield;
+      this.maxStamina = spec.maxStamina;
+      this.stamina = spec.maxStamina;
+      this.speedRun = spec.speedRun;
+      this.speedWalk = spec.speedWalk;
+      this.fleeDist = spec.fleeDist;
+      this.toughness = spec.toughness;
+      this.x = x;
+      this.y = y;
+      this.targetX = x;
+      this.targetY = y;
+      this.state = "grazing";
+      this.stateTimer = 3 + Math.random() * 3;
+      this.isAlive = true;
+      this.wounds = 0;
+    }
+    update(dt, map2, humans2, logEvent2) {
+      if (!this.isAlive || dt === 0) return;
+      let nearestHumanDist = 999;
+      let predator = null;
+      let hunterCount = 0;
+      for (const h of humans2) {
+        if (h.isAlive) {
+          const d = Math.hypot(h.x - this.x, h.y - this.y);
+          if (d < nearestHumanDist) {
+            nearestHumanDist = d;
+            predator = h;
+          }
+          if (h.actionIntent === "hunt_animal" && h.huntTarget === this && d < 7) {
+            hunterCount++;
+          }
+        }
+      }
+      const isTargeted = hunterCount > 0;
+      const effectiveFleeDist = isTargeted ? this.fleeDist + 1.8 : this.fleeDist;
+      if (nearestHumanDist < effectiveFleeDist && this.state !== "fleeing" && this.state !== "exhausted") {
+        this.state = "fleeing";
+        const angle = Math.atan2(this.y - predator.y, this.x - predator.x) + (Math.random() - 0.5) * 0.4;
+        const fX = this.x + Math.cos(angle) * (this.species === "hare" ? 3.5 : 5.5);
+        const fY = this.y + Math.sin(angle) * (this.species === "hare" ? 3.5 : 5.5);
+        this.targetX = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(fX)));
+        this.targetY = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(fY)));
+        logEvent2(`${this.icon} ${this.name} wittert ${predator.name} und flieht in Panik!`);
+      }
+      if (this.state === "fleeing") {
+        const dx = this.targetX - this.x;
+        const dy = this.targetY - this.y;
+        const dist = Math.hypot(dx, dy);
+        let speed;
+        if (this.stamina > 20) {
+          speed = this.speedRun * dt;
+          const drain = this.species === "hare" ? 18 : this.species === "bison" ? 8 : 13;
+          this.stamina = Math.max(0, this.stamina - dt * drain);
+        } else {
+          speed = this.speedRun * 0.55 * dt;
+          this.stamina = Math.max(0, this.stamina - dt * 5);
+        }
+        if (this.stamina <= 3) {
+          this.state = "exhausted";
+          this.stateTimer = this.species === "bison" ? 1.8 : 2.5;
+          logEvent2(`${this.icon} ${this.name} ist von der Hetzjagd v\xF6llig ersch\xF6pft und verlangsamt!`);
+        } else if (dist < speed) {
+          this.x = this.targetX;
+          this.y = this.targetY;
+          if (nearestHumanDist < this.fleeDist + 0.5 && predator) {
+            const angle = Math.atan2(this.y - predator.y, this.x - predator.x) + (Math.random() - 0.5) * 0.5;
+            const fX = this.x + Math.cos(angle) * 4.5;
+            const fY = this.y + Math.sin(angle) * 4.5;
+            this.targetX = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(fX)));
+            this.targetY = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(fY)));
+          } else {
+            this.state = "grazing";
+            this.stateTimer = 3 + Math.random() * 3;
+          }
+        } else {
+          this.x += dx / dist * speed;
+          this.y += dy / dist * speed;
+        }
+      }
+      if (this.state === "exhausted") {
+        this.stateTimer -= dt;
+        this.stamina = Math.min(this.maxStamina, this.stamina + dt * 8);
+        if (this.stateTimer <= 0) {
+          this.state = "fleeing";
+          if (predator) {
+            const angle = Math.atan2(this.y - predator.y, this.x - predator.x);
+            this.targetX = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(this.x + Math.cos(angle) * 4)));
+            this.targetY = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(this.y + Math.sin(angle) * 4)));
+          }
+        }
+      }
+      if (this.state === "moving") {
+        const dx = this.targetX - this.x;
+        const dy = this.targetY - this.y;
+        const dist = Math.hypot(dx, dy);
+        const speed = this.speedWalk * dt;
+        if (dist < speed) {
+          this.x = this.targetX;
+          this.y = this.targetY;
+          this.state = "grazing";
+          this.stateTimer = 3 + Math.random() * 4;
+        } else {
+          this.x += dx / dist * speed;
+          this.y += dy / dist * speed;
+        }
+      }
+      if (this.state === "grazing") {
+        this.stamina = Math.min(this.maxStamina, this.stamina + dt * 10);
+        this.stateTimer -= dt;
+        const gx = Math.round(this.x);
+        const gy = Math.round(this.y);
+        const curTile = map2[gy] && map2[gy][gx];
+        if (curTile) {
+          if (this.species === "boar") {
+            if (curTile.npk < 50 && Math.random() < 0.05 * dt) {
+              curTile.npk = Math.min(60, curTile.npk + 2);
+            }
+          } else if (curTile.plant && curTile.plant.type === "bush" && curTile.plant.berries > 0) {
+            if (Math.random() < 0.12 * dt) {
+              curTile.plant.berries--;
+            }
+          }
+        }
+        if (this.stateTimer <= 0) {
+          const rx = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(this.x + (Math.random() * 4 - 2))));
+          const ry = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(this.y + (Math.random() * 4 - 2))));
+          if (map2[ry] && map2[ry][rx] && map2[ry][rx].type !== "water") {
+            this.targetX = rx;
+            this.targetY = ry;
+            this.state = "moving";
+          }
+        }
+      }
+    }
+  };
+  function maybeSpawnWildAnimal(animals2, humans2, logEvent2, map2 = null) {
+    if (spookedTimer > 0) return;
+    if (animals2.length >= 2 || Math.random() > 16e-4) return;
+    const side = Math.floor(Math.random() * 4);
+    let sx = 1, sy = 1;
+    if (side === 0) {
+      sx = Math.floor(Math.random() * MAP_SIZE);
+      sy = 1;
+    } else if (side === 1) {
+      sx = Math.floor(Math.random() * MAP_SIZE);
+      sy = MAP_SIZE - 2;
+    } else if (side === 2) {
+      sx = 1;
+      sy = Math.floor(Math.random() * MAP_SIZE);
+    } else {
+      sx = MAP_SIZE - 2;
+      sy = Math.floor(Math.random() * MAP_SIZE);
+    }
+    for (const h of humans2) {
+      if (h.isAlive && Math.hypot(h.x - sx, h.y - sy) < 8) {
+        return;
+      }
+    }
+    const biomeId = map2 && map2.biomeId || "river_valley";
+    const roll = Math.random();
+    let speciesKey = "deer";
+    if (biomeId === "steppe") {
+      if (roll < 0.65) speciesKey = "bison";
+      else if (roll < 0.95) speciesKey = "hare";
+      else speciesKey = "deer";
+    } else if (biomeId === "forest") {
+      if (roll < 0.65) speciesKey = "boar";
+      else if (roll < 0.9) speciesKey = "deer";
+      else speciesKey = "hare";
+    } else if (biomeId === "karst_canyon") {
+      if (roll < 0.5) speciesKey = "hare";
+      else if (roll < 0.85) speciesKey = "deer";
+      else speciesKey = "bison";
+    } else {
+      if (roll < 0.35) speciesKey = "deer";
+      else if (roll < 0.65) speciesKey = "boar";
+      else if (roll < 0.85) speciesKey = "bison";
+      else speciesKey = "hare";
+    }
+    const animal = new WildAnimal(sx, sy, speciesKey);
+    animals2.push(animal);
+    logEvent2(`${animal.icon} Ein wildes Einzelexemplar (${animal.name}) wagt sich am Talrand hervor.`);
   }
 
   // src/human.js
@@ -1548,6 +2062,7 @@
             this.lastMeatYield = meat;
             this.huntTarget = null;
             this.utilityContributed += meat * 5;
+            spookWildlife(90);
             logEvent2(`\u{1F3F9} ${this.name} hat ${aIcon} ${aName} erlegt! (+${meat} Fleisch f\xFCrs Lager)`);
             this.setMoveTarget(map2, CAMP_CENTER.x, CAMP_CENTER.y, "deliver_stock");
             return;
@@ -2087,6 +2602,7 @@
           this.huntTarget.isAlive = false;
           this.carried = "\u{1F969} Wildbret";
           this.lastMeatYield = meat;
+          spookWildlife(90);
           this.setMoveTarget(map2, CAMP_CENTER.x, CAMP_CENTER.y, "deliver_stock");
           logEvent2(`\u{1F3F9} ${this.name} hat ein ${aName} erlegt! Er tr\xE4gt das Fleisch (${meat} Vorrat) ins Lager.`);
           return;
@@ -2103,9 +2619,27 @@
         logEvent2(`\u{1F954} ${this.name} hat nahrhafte Wurzelknollen ausgegraben.`);
         return;
       } else if (this.state === "fishing") {
+        const gx = Math.round(this.x);
+        const gy = Math.round(this.y);
+        const neighbors = [
+          map2[gy - 1] && map2[gy - 1][gx],
+          map2[gy + 1] && map2[gy + 1][gx],
+          map2[gy] && map2[gy][gx - 1],
+          map2[gy] && map2[gy][gx + 1]
+        ];
+        const wTile = neighbors.find((n) => n && n.type === "water" && (n.fishStock === void 0 || n.fishStock > 0));
+        if (wTile && typeof wTile.fishStock === "number") {
+          wTile.fishStock = Math.max(0, wTile.fishStock - 1);
+          if (wTile.fishStock === 0) {
+            logEvent2(`\u{1F41F} ${this.name} hat den letzten Fisch an dieser Stelle erbeutet! (\xDCberfischt)`);
+          } else {
+            logEvent2(`\u{1F41F} ${this.name} hat am Flussufer einen Fisch erbeutet!`);
+          }
+        } else {
+          logEvent2(`\u{1F41F} ${this.name} hat am Flussufer einen Fisch erbeutet!`);
+        }
         this.carried = "\u{1F41F} Flussfisch";
         this.setMoveTarget(map2, CAMP_CENTER.x, CAMP_CENTER.y, "deliver_stock");
-        logEvent2(`\u{1F41F} ${this.name} hat am Flussufer einen Fisch erbeutet!`);
         return;
       } else if (this.state === "relieving") {
         this.needs.bladder = 0;
@@ -2409,237 +2943,6 @@
     ];
   }
 
-  // src/wildlife.js
-  var nextAnimalId = 1;
-  var ANIMAL_SPECIES = {
-    deer: {
-      species: "deer",
-      name: "Ur-Hirsch",
-      icon: "\u{1F98C}",
-      meatYield: 5,
-      maxStamina: 100,
-      speedRun: 2.3,
-      speedWalk: 0.8,
-      fleeDist: 5.5,
-      toughness: 1,
-      // Standard Hetzjagd
-      habitat: "all"
-    },
-    boar: {
-      species: "boar",
-      name: "Wildschwein",
-      icon: "\u{1F417}",
-      meatYield: 7,
-      maxStamina: 120,
-      speedRun: 1.85,
-      speedWalk: 0.7,
-      fleeDist: 4.5,
-      toughness: 1,
-      // Wühlt nach Eicheln/Wurzeln im Wald
-      habitat: "forest"
-    },
-    bison: {
-      species: "bison",
-      name: "Ur-Bison",
-      icon: "\u{1F9AC}",
-      meatYield: 15,
-      maxStamina: 240,
-      speedRun: 1.45,
-      speedWalk: 0.55,
-      fleeDist: 4,
-      toughness: 2,
-      // Sehr zäh! Benötigt 2 Jäger oder mehrfache Angriffe
-      habitat: "grass"
-    },
-    hare: {
-      species: "hare",
-      name: "Feldhase",
-      icon: "\u{1F407}",
-      meatYield: 2,
-      maxStamina: 40,
-      speedRun: 2.8,
-      speedWalk: 0.9,
-      fleeDist: 3.5,
-      toughness: 1,
-      // Wendig, schlägt Haken, ideal für Jugendliche
-      habitat: "grass"
-    }
-  };
-  var WildAnimal = class {
-    constructor(x, y, speciesKey = "deer") {
-      this.id = nextAnimalId++;
-      const spec = ANIMAL_SPECIES[speciesKey] || ANIMAL_SPECIES.deer;
-      this.species = spec.species;
-      this.name = spec.name;
-      this.icon = spec.icon;
-      this.meatYield = spec.meatYield;
-      this.maxStamina = spec.maxStamina;
-      this.stamina = spec.maxStamina;
-      this.speedRun = spec.speedRun;
-      this.speedWalk = spec.speedWalk;
-      this.fleeDist = spec.fleeDist;
-      this.toughness = spec.toughness;
-      this.x = x;
-      this.y = y;
-      this.targetX = x;
-      this.targetY = y;
-      this.state = "grazing";
-      this.stateTimer = 3 + Math.random() * 3;
-      this.isAlive = true;
-      this.wounds = 0;
-    }
-    update(dt, map2, humans2, logEvent2) {
-      if (!this.isAlive || dt === 0) return;
-      let nearestHumanDist = 999;
-      let predator = null;
-      let hunterCount = 0;
-      for (const h of humans2) {
-        if (h.isAlive) {
-          const d = Math.hypot(h.x - this.x, h.y - this.y);
-          if (d < nearestHumanDist) {
-            nearestHumanDist = d;
-            predator = h;
-          }
-          if (h.actionIntent === "hunt_animal" && h.huntTarget === this && d < 7) {
-            hunterCount++;
-          }
-        }
-      }
-      const isTargeted = hunterCount > 0;
-      const effectiveFleeDist = isTargeted ? this.fleeDist + 1.8 : this.fleeDist;
-      if (nearestHumanDist < effectiveFleeDist && this.state !== "fleeing" && this.state !== "exhausted") {
-        this.state = "fleeing";
-        const angle = Math.atan2(this.y - predator.y, this.x - predator.x) + (Math.random() - 0.5) * 0.4;
-        const fX = this.x + Math.cos(angle) * (this.species === "hare" ? 3.5 : 5.5);
-        const fY = this.y + Math.sin(angle) * (this.species === "hare" ? 3.5 : 5.5);
-        this.targetX = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(fX)));
-        this.targetY = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(fY)));
-        logEvent2(`${this.icon} ${this.name} wittert ${predator.name} und flieht in Panik!`);
-      }
-      if (this.state === "fleeing") {
-        const dx = this.targetX - this.x;
-        const dy = this.targetY - this.y;
-        const dist = Math.hypot(dx, dy);
-        let speed;
-        if (this.stamina > 20) {
-          speed = this.speedRun * dt;
-          const drain = this.species === "hare" ? 18 : this.species === "bison" ? 8 : 13;
-          this.stamina = Math.max(0, this.stamina - dt * drain);
-        } else {
-          speed = this.speedRun * 0.55 * dt;
-          this.stamina = Math.max(0, this.stamina - dt * 5);
-        }
-        if (this.stamina <= 3) {
-          this.state = "exhausted";
-          this.stateTimer = this.species === "bison" ? 1.8 : 2.5;
-          logEvent2(`${this.icon} ${this.name} ist von der Hetzjagd v\xF6llig ersch\xF6pft und verlangsamt!`);
-        } else if (dist < speed) {
-          this.x = this.targetX;
-          this.y = this.targetY;
-          if (nearestHumanDist < this.fleeDist + 0.5 && predator) {
-            const angle = Math.atan2(this.y - predator.y, this.x - predator.x) + (Math.random() - 0.5) * 0.5;
-            const fX = this.x + Math.cos(angle) * 4.5;
-            const fY = this.y + Math.sin(angle) * 4.5;
-            this.targetX = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(fX)));
-            this.targetY = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(fY)));
-          } else {
-            this.state = "grazing";
-            this.stateTimer = 3 + Math.random() * 3;
-          }
-        } else {
-          this.x += dx / dist * speed;
-          this.y += dy / dist * speed;
-        }
-      }
-      if (this.state === "exhausted") {
-        this.stateTimer -= dt;
-        this.stamina = Math.min(this.maxStamina, this.stamina + dt * 8);
-        if (this.stateTimer <= 0) {
-          this.state = "fleeing";
-          if (predator) {
-            const angle = Math.atan2(this.y - predator.y, this.x - predator.x);
-            this.targetX = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(this.x + Math.cos(angle) * 4)));
-            this.targetY = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(this.y + Math.sin(angle) * 4)));
-          }
-        }
-      }
-      if (this.state === "moving") {
-        const dx = this.targetX - this.x;
-        const dy = this.targetY - this.y;
-        const dist = Math.hypot(dx, dy);
-        const speed = this.speedWalk * dt;
-        if (dist < speed) {
-          this.x = this.targetX;
-          this.y = this.targetY;
-          this.state = "grazing";
-          this.stateTimer = 3 + Math.random() * 4;
-        } else {
-          this.x += dx / dist * speed;
-          this.y += dy / dist * speed;
-        }
-      }
-      if (this.state === "grazing") {
-        this.stamina = Math.min(this.maxStamina, this.stamina + dt * 10);
-        this.stateTimer -= dt;
-        const gx = Math.round(this.x);
-        const gy = Math.round(this.y);
-        const curTile = map2[gy] && map2[gy][gx];
-        if (curTile) {
-          if (this.species === "boar") {
-            if (curTile.npk < 50 && Math.random() < 0.05 * dt) {
-              curTile.npk = Math.min(60, curTile.npk + 2);
-            }
-          } else if (curTile.plant && curTile.plant.type === "bush" && curTile.plant.berries > 0) {
-            if (Math.random() < 0.12 * dt) {
-              curTile.plant.berries--;
-            }
-          }
-        }
-        if (this.stateTimer <= 0) {
-          const rx = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(this.x + (Math.random() * 4 - 2))));
-          const ry = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(this.y + (Math.random() * 4 - 2))));
-          if (map2[ry] && map2[ry][rx] && map2[ry][rx].type !== "water") {
-            this.targetX = rx;
-            this.targetY = ry;
-            this.state = "moving";
-          }
-        }
-      }
-    }
-  };
-  function maybeSpawnWildAnimal(animals2, humans2, logEvent2) {
-    if (animals2.length >= 4 || Math.random() > 4e-3) return;
-    const side = Math.floor(Math.random() * 4);
-    let sx = 1, sy = 1;
-    if (side === 0) {
-      sx = Math.floor(Math.random() * MAP_SIZE);
-      sy = 1;
-    } else if (side === 1) {
-      sx = Math.floor(Math.random() * MAP_SIZE);
-      sy = MAP_SIZE - 2;
-    } else if (side === 2) {
-      sx = 1;
-      sy = Math.floor(Math.random() * MAP_SIZE);
-    } else {
-      sx = MAP_SIZE - 2;
-      sy = Math.floor(Math.random() * MAP_SIZE);
-    }
-    for (const h of humans2) {
-      if (h.isAlive && Math.hypot(h.x - sx, h.y - sy) < 7) {
-        return;
-      }
-    }
-    const roll = Math.random();
-    let speciesKey = "deer";
-    if (roll < 0.35) speciesKey = "deer";
-    else if (roll < 0.6) speciesKey = "boar";
-    else if (roll < 0.8) speciesKey = "bison";
-    else speciesKey = "hare";
-    const animal = new WildAnimal(sx, sy, speciesKey);
-    animals2.push(animal);
-    logEvent2(`${animal.icon} Ein wildes Exemplar (${animal.name}) betritt das Flusstal!`);
-  }
-
   // src/migration.js
   var migrationState = {
     isMigrating: false,
@@ -2742,11 +3045,15 @@
     }
     return map2;
   }
+  var BIOME_SEQUENCE = ["river_valley", "steppe", "forest", "karst_canyon"];
   function executeMigrationArrival(oldMap, humans2, animals2, campfireStock2, fireState2, advanceYearCallback, logEvent2) {
     migrationState.migrationsCount++;
     migrationState.isMigrating = false;
     migrationState.phase = "idle";
-    const newMap = createMap();
+    const curBiomeId = oldMap.biomeId || "river_valley";
+    const curIdx = BIOME_SEQUENCE.indexOf(curBiomeId);
+    const nextBiomeId = BIOME_SEQUENCE[(curIdx + 1) % BIOME_SEQUENCE.length];
+    const newMap = createMap(nextBiomeId);
     if (typeof advanceYearCallback === "function") {
       advanceYearCallback(1);
     }
@@ -2788,12 +3095,13 @@
       maybeSpawnWildAnimal(animals2, livingHumans, () => {
       });
     }
-    campfireStock2.wood = Math.max(3, campfireStock2.wood);
+    campfireStock2.wood = Math.max(2, campfireStock2.wood);
     campfireStock2.food = Math.max(3, campfireStock2.food);
     campfireStock2.stone = Math.max(2, campfireStock2.stone);
-    migrationState.announcement = `\u{1F304} NEUES FLUSSTAL ERREICHT! Nach Monaten der Wanderung schl\xE4gt die Sippe ihr Lager in frischen Jagdgr\xFCnden auf.`;
-    migrationState.announcementTimer = 8;
-    logEvent2(`\u{1F304} NEUES LAND: Unber\xFChrte Beerenstr\xE4ucher, klares Wasser und frisches Wildbret umgeben den Clan.`);
+    const biome = newMap.biome;
+    migrationState.announcement = `\u{1F304} NEUES LAND: ${biome.icon} ${biome.name} erreicht! ${biome.desc}`;
+    migrationState.announcementTimer = 9;
+    logEvent2(`\u{1F304} NEUES LAND: Der Clan betritt das Biom "${biome.name}" (${biome.icon}). ${biome.desc}`);
     return newMap;
   }
 
@@ -2803,6 +3111,7 @@
   var container = document.getElementById("viewport-container");
   var eventTicker = document.getElementById("event-ticker");
   var inspectorBox = document.getElementById("inspector-box");
+  var biomeBadgeEl = document.getElementById("biome-badge");
   var pressureValEl = document.getElementById("pressure-val");
   var pressureFillEl = document.getElementById("pressure-fill");
   var pressureDescEl = document.getElementById("pressure-desc");
@@ -2982,6 +3291,9 @@
     stockWoodEl.innerText = campfireStock.wood;
     stockFoodEl.innerText = campfireStock.food;
     stockWaterEl.innerText = campfireStock.water;
+    if (biomeBadgeEl && map && map.biome) {
+      biomeBadgeEl.innerText = `${map.biome.icon} ${map.biome.name}`;
+    }
     const currentYear = Math.floor(START_YEAR + elapsedYears);
     if (worldYearEl) {
       worldYearEl.innerText = `${currentYear.toLocaleString("de-DE")} v. Chr.`;
@@ -3261,7 +3573,8 @@
     map = updateMigration(dtSec, map, humans, animals, campfireStock, fireState, (addY) => {
       elapsedYears += addY;
     }, logEvent);
-    maybeSpawnWildAnimal(animals, humans, logEvent);
+    updateSpookTimer(dtSec);
+    maybeSpawnWildAnimal(animals, humans, logEvent, map);
     for (let i = animals.length - 1; i >= 0; i--) {
       const a = animals[i];
       if (!a.isAlive) {

@@ -30,3 +30,16 @@ export const SHELTER_CONFIG = {
   decayRate: 0.22,          // Verfall pro Sekunde (hält ohne Wartung ca. 450s)
   repairThreshold: 65       // Reparatur-Bedarf ab unter 65% Haltbarkeit
 };
+
+// Vorrats-Limits & Fäulnis-Thermodynamik (Keine Konserven / offener Erdboden)
+export const STORAGE_LIMITS = {
+  maxFood: 28,             // Maximal 28 Einheiten auf offenem Waldboden
+  maxWood: 35,
+  maxStone: 25,
+  maxWater: 20
+};
+
+export const SPOILAGE_CONFIG = {
+  decayInterval: 12.0,     // Intervall für biologischen Fäulnis-Zerfall
+  timer: 0
+};

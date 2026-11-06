@@ -1,65 +1,240 @@
-import { MAP_SIZE, CAMP_CENTER, SHELTER_CONFIG, campfireStock, fireState } from './config.js';
+// =========================================================================
+// MAP & BIOME GENERATION (Acheuléen-Landschaften & Ökologie)
+// =========================================================================
+// 4 unterschiedliche Landschaften: Fluss-Aue, Eiszeit-Steppe, Dichter Urwald, Felsenschlucht.
+// =========================================================================
 
-export function createMap() {
+import { MAP_SIZE, CAMP_CENTER, SHELTER_CONFIG, campfireStock, fireState, STORAGE_LIMITS, SPOILAGE_CONFIG } from './config.js';
+
+export const BIOMES = {
+  river_valley: {
+    id: 'river_valley',
+    name: 'Fluss-Aue',
+    icon: '🌊',
+    desc: 'Fruchtbares Auenthal mit Schilf, Beeren und reichem Fischbestand.',
+    palette: { grass: '#225522', dryGrass: '#2b5a27', water: '#0284c7' }
+  },
+  steppe: {
+    id: 'steppe',
+    name: 'Eiszeit-Steppe',
+    icon: '🌾',
+    desc: 'Karge Tundra. Kaum Bäume, keine Beeren, eisiger Wind – Heimat der Bisons.',
+    palette: { grass: '#4a5320', dryGrass: '#6b6638', water: '#38bdf8' }
+  },
+  forest: {
+    id: 'forest',
+    name: 'Dichter Urwald',
+    icon: '🌲',
+    desc: 'Uralte Eichen & Dickicht. Reich an Holz, Wurzeln und Wildschweinen.',
+    palette: { grass: '#1e3f20', dryGrass: '#1b3419', water: '#0ea5e9' }
+  },
+  karst_canyon: {
+    id: 'karst_canyon',
+    name: 'Felsenschlucht',
+    icon: '🪨',
+    desc: 'Schroffe Felswände mit natürlichen Höhlenüberhängen und Feuerstein.',
+    palette: { grass: '#3a4439', dryGrass: '#444d44', water: '#06b6d4' }
+  }
+};
+
+export function createMap(biomeId = 'river_valley') {
+  const biome = BIOMES[biomeId] || BIOMES.river_valley;
   const map = [];
+
   for (let y = 0; y < MAP_SIZE; y++) {
     map[y] = [];
     for (let x = 0; x < MAP_SIZE; x++) {
       let type = 'grass';
       let npk = 20 + Math.random() * 25;
       let plant = null;
+      let shelter = null;
+      let defaultFish = 0;
 
-      // Flusslauf im Osten (organisch geschwungen)
-      // An den meisten Stellen 1-2 Kacheln breit (Furt), stellenweise 3 Kacheln breit (tiefes Wasser)
-      const riverCenterX = 20 + Math.sin(y * 0.4) * 2;
-      const riverWidth = (y >= 8 && y <= 12) ? 1.8 : 1.1; // Bei y=8-12 ca 3-4 Kacheln breit, sonst 2 Kacheln
+      // 1. GEWÄSSER-GENERIERUNG NACH BIOM
+      if (biome.id === 'river_valley') {
+        // Breiter, organischer Flusslauf im Osten
+        const riverCenterX = 20 + Math.sin(y * 0.4) * 2;
+        const riverWidth = (y >= 8 && y <= 12) ? 1.8 : 1.1;
+        if (Math.abs(x - riverCenterX) <= riverWidth) {
+          type = 'water';
+          npk = 65;
+          defaultFish = 3;
+        }
+      } else if (biome.id === 'steppe') {
+        // Keine großen Flüsse! Nur 2 seichte Tümpel/Wasserlöcher
+        const inPond1 = Math.hypot(x - 19, y - 7) <= 1.8;
+        const inPond2 = Math.hypot(x - 7, y - 19) <= 1.5;
+        if (inPond1 || inPond2) {
+          type = 'water';
+          npk = 45;
+          defaultFish = 1; // Sehr schnell überfischt
+        }
+      } else if (biome.id === 'forest') {
+        // Schmaler, sich durch die Bäume schlängelnder Wald-Bach (1 Kachel breit)
+        const brookX = Math.round(18 + Math.sin(y * 0.5) * 1.5);
+        if (x === brookX) {
+          type = 'water';
+          npk = 70;
+          defaultFish = 2;
+        }
+      } else if (biome.id === 'karst_canyon') {
+        // Reißender Gebirgsbach in der Klamm
+        const canyonStreamX = Math.round(19 + Math.cos(y * 0.35) * 1.4);
+        if (Math.abs(x - canyonStreamX) <= 1.0) {
+          type = 'water';
+          npk = 50;
+          defaultFish = 2;
+        }
+      }
 
-      if (Math.abs(x - riverCenterX) <= riverWidth) {
-        type = 'water';
-        npk = 65;
+      // 2. FELSEN & HÖHLEN-GENERIERUNG
+      if (type !== 'water') {
+        if (biome.id === 'karst_canyon') {
+          // Massiver Karst: 35% Felswände
+          if ((x <= 6 && Math.random() < 0.65) || (x >= 14 && x <= 17 && Math.random() < 0.55) || Math.random() < 0.12) {
+            type = 'rock';
+          }
+          // Natürlicher Höhlen-Überhang in der Nähe des Lagers (fertiger Schutzraum)
+          if ((x === CAMP_CENTER.x - 2 && y === CAMP_CENTER.y - 1) || (x === CAMP_CENTER.x + 2 && y === CAMP_CENTER.y - 2)) {
+            type = 'shelter';
+            shelter = { condition: 100, capacity: 2, isCave: true };
+          }
+        } else if (biome.id === 'steppe') {
+          // Vereinzelte Findlinge
+          if (Math.random() < 0.08) type = 'rock';
+        } else if (biome.id === 'forest') {
+          // Moosige Felsbrocken
+          if (Math.random() < 0.04) type = 'rock';
+        } else {
+          // Fluss-Aue Felsen
+          if ((x >= 15 && x <= 18 && y <= 3) || (x === 6 && y === 4)) {
+            if (Math.random() < 0.45) type = 'rock';
+          }
+        }
       }
-      // Felsbrocken
-      else if ((x >= 15 && x <= 18 && y <= 3) || (x === 6 && y === 4)) {
-        if (Math.random() < 0.45) type = 'rock';
+
+      // 3. VEGETATION (Bäume & Beerensträucher)
+      if (type === 'grass') {
+        const isNearCamp = Math.hypot(x - CAMP_CENTER.x, y - CAMP_CENTER.y) <= 2.2;
+
+        if (biome.id === 'forest') {
+          // Dichter Urwald: 55% Baumbedeckung überall außer im Lagerzentrum
+          if (!isNearCamp && Math.random() < 0.55) {
+            const treeMaxAge = 1000 + Math.random() * 500;
+            plant = {
+              type: 'tree',
+              stage: 3,
+              woodStock: 4,
+              seedVariance: Math.random(),
+              maxAge: treeMaxAge,
+              ageTimer: Math.random() * (treeMaxAge * 0.7)
+            };
+            npk = 75;
+          } else if (Math.random() < 0.08) {
+            plant = {
+              type: 'bush',
+              stage: 2,
+              berries: 2,
+              maxBerries: 4,
+              berryTimer: 0,
+              seedVariance: Math.random(),
+              maxAge: 600,
+              ageTimer: 0,
+              isRootstock: false
+            };
+          }
+        } else if (biome.id === 'steppe') {
+          // Steppe: Nahezu KEINE Bäume (Holznot!), 0 Beerensträucher!
+          if (!isNearCamp && Math.random() < 0.012) {
+            plant = {
+              type: 'tree',
+              stage: 2,
+              woodStock: 2,
+              seedVariance: Math.random(),
+              maxAge: 700,
+              ageTimer: 0
+            };
+          }
+          // Keine Sträucher in der eisigen Steppe
+        } else if (biome.id === 'karst_canyon') {
+          // Felsige Schlucht: Spärliche, zähe Gehölze
+          if (!isNearCamp && Math.random() < 0.10) {
+            plant = {
+              type: 'tree',
+              stage: 3,
+              woodStock: 3,
+              seedVariance: Math.random(),
+              maxAge: 850,
+              ageTimer: 0
+            };
+          } else if (Math.random() < 0.08) {
+            plant = {
+              type: 'bush',
+              stage: 2,
+              berries: 2,
+              maxBerries: 4,
+              berryTimer: 0,
+              seedVariance: Math.random(),
+              maxAge: 600,
+              ageTimer: 0,
+              isRootstock: false
+            };
+          }
+        } else {
+          // Fluss-Aue: Ausgewogene Vegetation
+          if (x <= 5 && Math.random() < 0.35) {
+            const treeMaxAge = 900 + Math.random() * 600;
+            plant = {
+              type: 'tree',
+              stage: 3,
+              woodStock: 4,
+              seedVariance: Math.random(),
+              maxAge: treeMaxAge,
+              ageTimer: Math.random() * (treeMaxAge * 0.7)
+            };
+            npk = 65;
+          } else if ((y >= 20 && Math.random() < 0.25) || (Math.hypot(x - CAMP_CENTER.x, y - CAMP_CENTER.y) > 3 && Math.hypot(x - CAMP_CENTER.x, y - CAMP_CENTER.y) < 7 && Math.random() < 0.12)) {
+            const bushMaxAge = 700 + Math.random() * 450;
+            plant = {
+              type: 'bush',
+              stage: 3,
+              berries: 3,
+              maxBerries: 5,
+              berryTimer: 0,
+              seedVariance: Math.random(),
+              maxAge: bushMaxAge,
+              ageTimer: Math.random() * (bushMaxAge * 0.4),
+              isRootstock: false
+            };
+            npk = 55;
+          }
+        }
       }
-      // Wilde Waldzone im Westen
-      else if (x <= 5 && Math.random() < 0.35) {
-        const treeMaxAge = 900 + Math.random() * 600;
-        plant = {
-          type: 'tree',
-          stage: 3,
-          woodStock: 4,
-          seedVariance: Math.random(),
-          maxAge: treeMaxAge,
-          ageTimer: Math.random() * (treeMaxAge * 0.7)
-        };
-        npk = 65;
+
+      // 4. ESSBARE WURZELKNOLLEN IM BODEN (Grabstock-Subsistenz)
+      let roots = 0;
+      if (type === 'grass' && !plant) {
+        if (biome.id === 'steppe') {
+          // Steppenboden birgt viele zähe Wurzeln
+          if (Math.random() < 0.50) roots = 1 + Math.floor(Math.random() * 2);
+        } else if (biome.id === 'forest') {
+          // Waldhumus ist voll mit stärkehaltigen Wurzeln
+          if (Math.random() < 0.45) roots = 2;
+        } else {
+          if (Math.random() < 0.35) roots = 1 + Math.floor(Math.random() * 2);
+        }
       }
-      // Beerensträucher im Süden UND in der Nähe des Lagers
-      else if ((y >= 20 && Math.random() < 0.25) || (Math.hypot(x - CAMP_CENTER.x, y - CAMP_CENTER.y) > 3 && Math.hypot(x - CAMP_CENTER.x, y - CAMP_CENTER.y) < 7 && Math.random() < 0.12)) {
-        const bushMaxAge = 700 + Math.random() * 450;
-        plant = {
-          type: 'bush',
-          stage: 3,
-          berries: 4,
-          maxBerries: 5,
-          berryTimer: 0,
-          seedVariance: Math.random(),
-          maxAge: bushMaxAge,
-          ageTimer: Math.random() * (bushMaxAge * 0.4),
-          isRootstock: false
-        };
-        npk = 55;
-      }
-      // Pfad zum Wasser (als initialer Trampelpfad)
+
+      // Pfad zum Wasser (initial)
       let isDesirePath = false;
       let trample = 0;
-      if (y === CAMP_CENTER.y && x >= CAMP_CENTER.x && x <= 19) {
+      if (biome.id === 'river_valley' && y === CAMP_CENTER.y && x >= CAMP_CENTER.x && x <= 19) {
         type = 'path';
         isDesirePath = true;
         trample = 90;
       }
-      // Zentrales Stammesfeuer: Brennt zu Beginn bei 100%
+
+      // Zentrales Stammesfeuer am Camp-Zentrum (12, 12)
       let fireObj = null;
       if (x === CAMP_CENTER.x && y === CAMP_CENTER.y) {
         type = 'fire';
@@ -75,21 +250,15 @@ export function createMap() {
       // Blumen auf magerem Boden
       const flowerDots = [];
       if (npk < 32 && type === 'grass') {
-        const count = 3 + Math.floor(Math.random() * 4);
+        const count = 2 + Math.floor(Math.random() * 3);
         for (let i = 0; i < count; i++) {
           flowerDots.push({
             dx: (Math.random() - 0.5) * 22,
             dy: (Math.random() - 0.5) * 11,
-            color: Math.random() < 0.35 ? '#f43f5e' : (Math.random() < 0.65 ? '#fbbf24' : '#60a5fa'),
-            size: 0.9 + Math.random() * 0.8
+            color: biome.id === 'steppe' ? '#eab308' : (Math.random() < 0.5 ? '#f43f5e' : '#60a5fa'),
+            size: 0.9 + Math.random() * 0.7
           });
         }
-      }
-
-      // Wurzelknollen im Boden (Grabstock-Ressource)
-      let roots = 0;
-      if (type === 'grass' && !plant && Math.random() < 0.40) {
-        roots = 1 + Math.floor(Math.random() * 2);
       }
 
       map[y][x] = {
@@ -97,6 +266,10 @@ export function createMap() {
         npk: npk,
         plant: plant,
         roots: roots,
+        shelter: shelter,
+        fishStock: defaultFish,
+        maxFishStock: defaultFish,
+        fishRegenTimer: 0,
         poop: null,
         flowerDots: flowerDots,
         trample: trample,
@@ -106,12 +279,10 @@ export function createMap() {
     }
   }
 
-  // Für jede Wasserkachel die lokale Flussbreite vorberechnen:
-  // Ist sie <= 2 Kacheln (Furt / seicht) oder >= 3 (tief / unpassierbar)
+  // Für jede Wasserkachel die lokale Furt-Passierbarkeit prüfen
   for (let y = 0; y < MAP_SIZE; y++) {
     for (let x = 0; x < MAP_SIZE; x++) {
       if (map[y][x].type === 'water') {
-        // Zähle zusammenhängende horizontale Wasser-Kacheln
         let width = 1;
         let lx = x - 1;
         while (lx >= 0 && map[y][lx].type === 'water') { width++; lx--; }
@@ -119,18 +290,55 @@ export function createMap() {
         while (rx < MAP_SIZE && map[y][rx].type === 'water') { width++; rx++; }
 
         map[y][x].waterWidth = width;
-        map[y][x].isFord = (width <= 2); // Furt = passierbar!
+        map[y][x].isFord = (width <= 2);
       }
     }
   }
+
+  // Biom-Metadaten anhängen
+  map.biomeId = biome.id;
+  map.biome = biome;
 
   return map;
 }
 
 export function updateEcology(map, dtSec, logEvent) {
+  // ==========================================
+  // NAHRUNGSVERDERB & LAGERKAPAZITÄT (Thermodynamik der Fäule)
+  // Auf offenem Erdboden verfaulen Fleisch & Beeren kontinuierlich
+  // ==========================================
+  SPOILAGE_CONFIG.timer = (SPOILAGE_CONFIG.timer || 0) + dtSec;
+  if (SPOILAGE_CONFIG.timer >= SPOILAGE_CONFIG.decayInterval) {
+    SPOILAGE_CONFIG.timer = 0;
+    if (campfireStock.food > 0) {
+      // Höherer Verderb bei großem Vorratshaufen (> 18 Nahrung)
+      const loss = (campfireStock.food > 18) ? 2 : 1;
+      campfireStock.food = Math.max(0, campfireStock.food - loss);
+      if (Math.random() < 0.25) {
+        logEvent(`🍂 Vorratsverderb: Fleisch & Beeren sind im feuchten Erdlager verfault (-${loss}).`);
+      }
+    }
+  }
+
+  // Obergrenze: Auf offenem Erdboden kann maximal STORAGE_LIMITS.maxFood gelagert werden
+  if (campfireStock.food > STORAGE_LIMITS.maxFood) {
+    campfireStock.food = STORAGE_LIMITS.maxFood;
+  }
+
   for (let y = 0; y < MAP_SIZE; y++) {
     for (let x = 0; x < MAP_SIZE; x++) {
       const tile = map[y][x];
+
+      // ==========================================
+      // GEWÄSSER: FISCHBESTAND-REGENERATION (Überfischungs-Schutz)
+      // ==========================================
+      if (tile.type === 'water' && tile.fishStock < tile.maxFishStock) {
+        tile.fishRegenTimer = (tile.fishRegenTimer || 0) + dtSec;
+        if (tile.fishRegenTimer >= 140.0) {
+          tile.fishStock++;
+          tile.fishRegenTimer = 0;
+        }
+      }
 
       if (tile.poop) {
         tile.poop.timer -= dtSec;
@@ -140,7 +348,7 @@ export function updateEcology(map, dtSec, logEvent) {
           tile.flowerDots = [];
 
           if (!tile.plant && tile.type === 'grass') {
-            if (Math.random() < 0.5) {
+            if (map.biomeId !== 'steppe' && Math.random() < 0.5) {
               tile.plant = {
                 type: 'bush',
                 stage: 1,
@@ -148,8 +356,9 @@ export function updateEcology(map, dtSec, logEvent) {
                 berries: 0,
                 berryTimer: 0,
                 seedVariance: Math.random(),
-                maxAge: 350 + Math.random() * 250,
-                ageTimer: 0
+                maxAge: 500,
+                ageTimer: 0,
+                isRootstock: false
               };
               logEvent(`🌱 Wilder Beerenstrauch aus Kot gekeimt! [${x}, ${y}]`);
             } else {
@@ -173,13 +382,12 @@ export function updateEcology(map, dtSec, logEvent) {
       }
 
       // Regeneration von essbaren Wurzelknollen im nahrhaften Grasboden
-      if (tile.type === 'grass' && (!tile.roots || tile.roots < 3) && tile.npk >= 30 && Math.random() < 0.003 * dtSec) {
+      if (tile.type === 'grass' && (!tile.roots || tile.roots < 3) && tile.npk >= 30 && Math.random() < 0.002 * dtSec) {
         tile.roots = (tile.roots || 0) + 1;
       }
 
       // ==========================================
-      // TRAMPELPFAD-RENATURIERUNG (Sukzession der Grasnarbe)
-      // Ungenutzte Trampelpfade werden von der Wiese zurückerobert!
+      // TRAMPELPFAD-RENATURIERUNG
       // ==========================================
       if (tile.trample && tile.trample > 0) {
         tile.trample = Math.max(0, tile.trample - dtSec * 0.35);
@@ -188,25 +396,13 @@ export function updateEcology(map, dtSec, logEvent) {
         tile.type = 'grass';
         tile.isDesirePath = false;
         tile.trample = 0;
-        if (tile.npk < 32 && (!tile.flowerDots || tile.flowerDots.length === 0)) {
-          tile.flowerDots = [];
-          const count = 2 + Math.floor(Math.random() * 3);
-          for (let i = 0; i < count; i++) {
-            tile.flowerDots.push({
-              dx: (Math.random() - 0.5) * 22,
-              dy: (Math.random() - 0.5) * 11,
-              color: Math.random() < 0.5 ? '#f43f5e' : '#fbbf24',
-              size: 0.9 + Math.random() * 0.7
-            });
-          }
-        }
       }
 
       // ==========================================
-      // HÜTTEN-VERFALL (Verwitterung durch Wind & Wetter)
-      // Ohne Wartung durch Menschen verfällt jede Schutzhütte allmählich!
+      // HÜTTEN-VERFALL
+      // Natürliche Höhlenüberhänge verfallen nicht!
       // ==========================================
-      if (tile.type === 'shelter') {
+      if (tile.type === 'shelter' && !tile.shelter?.isCave) {
         if (!tile.shelter) {
           tile.shelter = { condition: 100, capacity: SHELTER_CONFIG.capacity };
         }
@@ -219,7 +415,7 @@ export function updateEcology(map, dtSec, logEvent) {
       }
 
       // ==========================================
-      // DEZENTRALE FEUER-THERMODYNAMIK (Jedes Feuer brennt autark!)
+      // DEZENTRALE FEUER-THERMODYNAMIK
       // ==========================================
       if (tile.type === 'fire') {
         const isCampCenter = (x === CAMP_CENTER.x && y === CAMP_CENTER.y);
@@ -236,7 +432,6 @@ export function updateEcology(map, dtSec, logEvent) {
         if (tile.fire.woodBurnTimer >= 22.0) {
           tile.fire.woodBurnTimer = 0;
           if (tile.fire.isCampCenter) {
-            // Zentrales Lagerfeuer bezieht Brennholz aus dem Clan-Vorratslager
             if (campfireStock.wood > 0) {
               campfireStock.wood--;
               tile.fire.intensity = Math.min(100, tile.fire.intensity + 15);
@@ -248,7 +443,6 @@ export function updateEcology(map, dtSec, logEvent) {
             }
             fireState.intensity = tile.fire.intensity;
           } else {
-            // Autarke Außen-Feuerstelle: Verbrennt ihren eigenen Holzvorrat
             if (tile.fire.wood > 0) {
               tile.fire.wood--;
               tile.fire.intensity = Math.min(100, tile.fire.intensity + 15);
@@ -268,14 +462,12 @@ export function updateEcology(map, dtSec, logEvent) {
         const p = tile.plant;
         const growthRate = (tile.npk / 40);
 
-        // Natürlicher Alterungs- und Totholz-Zyklus
+        // Alterung & Wurzelstock-Regeneration
         if (p.stage === 3) {
           p.ageTimer = (p.ageTimer || 0) + dtSec;
           const maxAge = p.maxAge || (p.type === 'bush' ? 800 : 1200);
           if (p.ageTimer >= maxAge) {
             if (p.type === 'bush') {
-              // Stockausschlag / Wurzelstock-Regeneration:
-              // Beerenstrauch stirbt nicht spurlos, sondern zieht sich in den Wurzelstock zurück!
               p.stage = 1;
               p.isRootstock = true;
               p.berries = 0;
@@ -309,42 +501,9 @@ export function updateEcology(map, dtSec, logEvent) {
 
         if (p.type === 'bush' && p.stage >= 2 && p.berries < (p.maxBerries || 5) && !p.isRootstock) {
           p.berryTimer = (p.berryTimer || 0) + dtSec;
-          if (p.berryTimer >= 9.0) {
+          if (p.berryTimer >= 10.0) {
             p.berries++;
             p.berryTimer = 0;
-          }
-        }
-
-        // Samenverbreitung mit ökologischer Kronendichte (Lichtmangel-Filter)
-        const seedChance = (p.type === 'bush' ? 0.0004 : 0.0008) * dtSec;
-        if (p.stage === 3 && Math.random() < seedChance) {
-          const nx = Math.max(0, Math.min(MAP_SIZE - 1, x + (Math.random() < 0.5 ? -1 : 1)));
-          const ny = Math.max(0, Math.min(MAP_SIZE - 1, y + (Math.random() < 0.5 ? -1 : 1)));
-          const nTile = map[ny][nx];
-          if (nTile.type === 'grass' && !nTile.plant) {
-            // Kronendichte: Wenn im 3x3 Umfeld bereits >= 2 Pflanzen stehen, fehlt das Sonnenlicht
-            let neighborCount = 0;
-            for (let dy = -1; dy <= 1; dy++) {
-              for (let dx = -1; dx <= 1; dx++) {
-                const ct = map[ny + dy] && map[ny + dy][nx + dx];
-                if (ct && ct.plant) neighborCount++;
-              }
-            }
-            if (neighborCount <= 2) {
-              const maxA = p.type === 'bush' ? (350 + Math.random() * 250) : (900 + Math.random() * 600);
-              nTile.plant = {
-                type: p.type,
-                stage: 1,
-                growthTimer: 0,
-                berries: 0,
-                berryTimer: 0,
-                woodStock: 3,
-                seedVariance: Math.random(),
-                maxAge: maxA,
-                ageTimer: 0
-              };
-              logEvent(`🍃 Wind hat Samen verweht: Neuer ${p.type === 'bush' ? 'Strauch' : 'Baum'} keimt bei [${nx}, ${ny}].`);
-            }
           }
         }
       }

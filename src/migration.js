@@ -150,17 +150,23 @@ export function updateMigration(dt, map, humans, animals, campfireStock, fireSta
   return map;
 }
 
+// Biome-Rotationsfolge beim Weiterzug
+const BIOME_SEQUENCE = ['river_valley', 'steppe', 'forest', 'karst_canyon'];
+
 /**
  * Vollzieht die Ankunft in einem neuen, unberührten Tal:
- * Generiert eine frische Karte, setzt Hominiden um, übernimmt Feuerglut.
+ * Generiert eine frische Karte mit völlig neuem Landschaftstyp, setzt Hominiden um, übernimmt Feuerglut.
  */
 export function executeMigrationArrival(oldMap, humans, animals, campfireStock, fireState, advanceYearCallback, logEvent) {
   migrationState.migrationsCount++;
   migrationState.isMigrating = false;
   migrationState.phase = 'idle';
 
-  // 1. Neues Flusstal generieren
-  const newMap = createMap();
+  // 1. Nächstes Biom aus der Rotationsfolge wählen
+  const curBiomeId = oldMap.biomeId || 'river_valley';
+  const curIdx = BIOME_SEQUENCE.indexOf(curBiomeId);
+  const nextBiomeId = BIOME_SEQUENCE[(curIdx + 1) % BIOME_SEQUENCE.length];
+  const newMap = createMap(nextBiomeId);
 
   // 2. Zeitrechnung um 1 Wanderungsjahr voranschreiten lassen
   if (typeof advanceYearCallback === 'function') {
@@ -215,13 +221,14 @@ export function executeMigrationArrival(oldMap, humans, animals, campfireStock, 
   }
 
   // 6. Vorräte leicht aufstocken durch Wegzehrung
-  campfireStock.wood = Math.max(3, campfireStock.wood);
+  campfireStock.wood = Math.max(2, campfireStock.wood);
   campfireStock.food = Math.max(3, campfireStock.food);
   campfireStock.stone = Math.max(2, campfireStock.stone);
 
-  migrationState.announcement = `🌄 NEUES FLUSSTAL ERREICHT! Nach Monaten der Wanderung schlägt die Sippe ihr Lager in frischen Jagdgründen auf.`;
-  migrationState.announcementTimer = 8.0;
-  logEvent(`🌄 NEUES LAND: Unberührte Beerensträucher, klares Wasser und frisches Wildbret umgeben den Clan.`);
+  const biome = newMap.biome;
+  migrationState.announcement = `🌄 NEUES LAND: ${biome.icon} ${biome.name} erreicht! ${biome.desc}`;
+  migrationState.announcementTimer = 9.0;
+  logEvent(`🌄 NEUES LAND: Der Clan betritt das Biom "${biome.name}" (${biome.icon}). ${biome.desc}`);
 
   return newMap;
 }
