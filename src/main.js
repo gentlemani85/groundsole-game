@@ -1,9 +1,9 @@
-import { MAP_SIZE, campfireStock, CAMP_CENTER, fireState } from './config.js?v=8';
-import { Camera } from './isometric.js?v=8';
-import { createMap, updateEcology } from './map.js?v=8';
-import { Renderer } from './render.js?v=8';
-import { createInitialHumans, maybeSpawnForeignWanderer } from './human.js?v=8';
-import { maybeSpawnWildAnimal } from './wildlife.js?v=8';
+import { MAP_SIZE, campfireStock, CAMP_CENTER, fireState, START_YEAR } from './config.js';
+import { Camera } from './isometric.js';
+import { createMap, updateEcology } from './map.js';
+import { Renderer } from './render.js';
+import { createInitialHumans, maybeSpawnForeignWanderer } from './human.js';
+import { maybeSpawnWildAnimal } from './wildlife.js';
 
 // Setup DOM
 const canvas = document.getElementById('game-canvas');
@@ -11,6 +11,17 @@ const ctx = canvas.getContext('2d');
 const container = document.getElementById('viewport-container');
 const eventTicker = document.getElementById('event-ticker');
 const inspectorBox = document.getElementById('inspector-box');
+
+// Weltzeit & Demographie DOM-Elemente
+const worldYearEl = document.getElementById('world-year');
+const elapsedYearsEl = document.getElementById('elapsed-years');
+const simSeasonEl = document.getElementById('sim-season');
+const demoCountEl = document.getElementById('demo-count');
+const demoCountSubEl = document.getElementById('demo-count-sub');
+const demoGenderEl = document.getElementById('demo-gender');
+const demoGenderSubEl = document.getElementById('demo-gender-sub');
+const demoAgeEl = document.getElementById('demo-age');
+const demoAgeSubEl = document.getElementById('demo-age-sub');
 
 const stockStoneEl = document.getElementById('stock-stone');
 const stockWoodEl = document.getElementById('stock-wood');
@@ -29,6 +40,8 @@ const map = createMap();
 const humans = createInitialHumans();
 const animals = [];
 
+let elapsedYears = 0;
+let historicalDeathsCount = 0;
 let simSpeed = 1;
 let activeTool = 'inspect';
 let selectedHumanId = null;
@@ -47,7 +60,158 @@ const centerPos = camera.gridToScreen(CAMP_CENTER.x, CAMP_CENTER.y);
 camera.x = canvas.width / 2 - (centerPos.x - camera.x);
 camera.y = canvas.height / 2 - (centerPos.y - camera.y);
 
+function getStatusLabel(h) {
+  if (!h.isAlive) return 'verstorben';
+  if (h.ageYears < 4) return 'bei Mutter (Tragling)';
+  if (h.state === 'socializing') {
+    return h.actionIntent === 'sit_campfire' ? 'am Feuer 🔥' : 'plaudert 🗣️';
+  }
+  if (h.state === 'playing') return 'spielt ⭐';
+  if (h.state === 'resting') return (h.actionIntent === 'rest_shelter' ? 'in Hütte ⛺' : 'ruht');
+  if (h.state === 'moving') {
+    if (h.actionIntent === 'hunt_animal') return 'auf Hetzjagd 🏹';
+    if (h.actionIntent === 'sit_campfire') return 'geht zum Feuer';
+    if (h.actionIntent === 'play') return 'tollt umher';
+    return 'unterwegs';
+  }
+  return h.state;
+}
+
 // UI
+function renderOrUpdateCards(humanList) {
+  const existingCards = inspectorBox.querySelectorAll('.human-card');
+  const existingIds = Array.from(existingCards).map(c => parseInt(c.dataset.humanId, 10));
+  const currentIds = humanList.map(h => h.id);
+
+  // Struktureller Neuaufbau nur, wenn Personen hinzukommen oder wegfallen
+  const needsRebuild = existingIds.length !== currentIds.length ||
+    !currentIds.every((id, idx) => existingIds[idx] === id);
+
+  if (needsRebuild) {
+    let html = '';
+    for (const h of humanList) {
+      const isSel = (h.id === selectedHumanId);
+      const ageInt = Math.floor(h.ageYears);
+      const statusLabel = getStatusLabel(h);
+
+      html += `
+        <div id="human-card-${h.id}" data-human-id="${h.id}" class="human-card ${isSel ? 'selected' : ''} ${!h.isAlive ? 'dead' : ''}" onclick="selectHuman(${h.id}, true)">
+          <div class="human-header">
+            <span class="card-name-title">${h.name} (${ageInt} J., ${h.gender === 'm' ? '♂' : '♀'})</span>
+            <span class="human-role">${h.role}</span>
+          </div>
+          <div class="card-status-line" style="font-size:0.66rem; color:#9ca3af; margin-bottom:4px;">
+            Aktion: <b class="card-action">${statusLabel}</b> | Nutzen: <b class="card-utility">+${h.utilityContributed}</b>
+            <div class="card-death-cause" style="color:#f87171; font-size:0.64rem; margin-top:2px; display:${!h.isAlive && h.deathCause ? 'block' : 'none'};">Ursache: ${h.deathCause || ''}</div>
+          </div>
+
+          <div class="card-bars-container" style="display: ${h.isAlive ? 'block' : 'none'};">
+            <div class="bar-row">
+              <div class="bar-label"><span>Wasser</span><span class="val-water">${Math.round(h.needs.water)}%</span></div>
+              <div class="bar-bg"><div class="bar-fill fill-water" style="width: ${h.needs.water}%"></div></div>
+            </div>
+
+            <div class="bar-row">
+              <div class="bar-label"><span>Nahrung</span><span class="val-food">${Math.round(h.needs.food)}%</span></div>
+              <div class="bar-bg"><div class="bar-fill fill-hunger" style="width: ${h.needs.food}%"></div></div>
+            </div>
+
+            <div class="bar-row">
+              <div class="bar-label"><span>Entleerungsdruck</span><span class="val-bladder">${Math.round(h.needs.bladder)}%</span></div>
+              <div class="bar-bg"><div class="bar-fill fill-bladder" style="width: ${h.needs.bladder}%"></div></div>
+            </div>
+
+            <div class="bar-row">
+              <div class="bar-label"><span>Energie</span><span class="val-energy">${Math.round(h.needs.energy)}%</span></div>
+              <div class="bar-bg"><div class="bar-fill fill-energy" style="width: ${h.needs.energy}%"></div></div>
+            </div>
+
+            <div class="bar-row">
+              <div class="bar-label"><span>Paarungstrieb</span><span class="val-libido">${Math.round(h.needs.libido)}%</span></div>
+              <div class="bar-bg"><div class="bar-fill fill-libido" style="width: ${h.needs.libido}%"></div></div>
+            </div>
+
+            <div class="bar-row">
+              <div class="bar-label"><span>Alterung</span><span class="val-age">${ageInt} / ${Math.floor(h.maxAgeYears)} J.</span></div>
+              <div class="bar-bg"><div class="bar-fill fill-age" style="width: ${(h.ageYears / h.maxAgeYears) * 100}%"></div></div>
+            </div>
+          </div>
+          <div class="card-dead-msg" style="color:#ef4444; font-size:0.68rem; margin-top:3px; display: ${h.isAlive ? 'none' : 'block'};">Biophysikalisch erloschen.</div>
+        </div>
+      `;
+    }
+    inspectorBox.innerHTML = html;
+    return;
+  }
+
+  // Chirurgische Aktualisierung im existierenden DOM (verhindert Scroll-Abbruch)
+  for (const h of humanList) {
+    const card = document.getElementById(`human-card-${h.id}`);
+    if (!card) continue;
+
+    const isSel = (h.id === selectedHumanId);
+    card.classList.toggle('selected', isSel);
+    card.classList.toggle('dead', !h.isAlive);
+
+    const ageInt = Math.floor(h.ageYears);
+    const titleEl = card.querySelector('.card-name-title');
+    if (titleEl) titleEl.innerText = `${h.name} (${ageInt} J., ${h.gender === 'm' ? '♂' : '♀'})`;
+
+    const actionEl = card.querySelector('.card-action');
+    if (actionEl) actionEl.innerText = getStatusLabel(h);
+
+    const utilityEl = card.querySelector('.card-utility');
+    if (utilityEl) utilityEl.innerText = `+${h.utilityContributed}`;
+
+    const deathEl = card.querySelector('.card-death-cause');
+    if (deathEl) {
+      if (!h.isAlive && h.deathCause) {
+        deathEl.style.display = 'block';
+        deathEl.innerText = `Ursache: ${h.deathCause}`;
+      } else {
+        deathEl.style.display = 'none';
+      }
+    }
+
+    const barsContainer = card.querySelector('.card-bars-container');
+    const deadMsg = card.querySelector('.card-dead-msg');
+    if (barsContainer) barsContainer.style.display = h.isAlive ? 'block' : 'none';
+    if (deadMsg) deadMsg.style.display = h.isAlive ? 'none' : 'block';
+
+    if (h.isAlive) {
+      const wEl = card.querySelector('.val-water');
+      if (wEl) wEl.innerText = `${Math.round(h.needs.water)}%`;
+      const wBar = card.querySelector('.bar-fill.fill-water');
+      if (wBar) wBar.style.width = `${Math.min(100, Math.max(0, h.needs.water))}%`;
+
+      const fEl = card.querySelector('.val-food');
+      if (fEl) fEl.innerText = `${Math.round(h.needs.food)}%`;
+      const fBar = card.querySelector('.bar-fill.fill-hunger');
+      if (fBar) fBar.style.width = `${Math.min(100, Math.max(0, h.needs.food))}%`;
+
+      const bEl = card.querySelector('.val-bladder');
+      if (bEl) bEl.innerText = `${Math.round(h.needs.bladder)}%`;
+      const bBar = card.querySelector('.bar-fill.fill-bladder');
+      if (bBar) bBar.style.width = `${Math.min(100, Math.max(0, h.needs.bladder))}%`;
+
+      const eEl = card.querySelector('.val-energy');
+      if (eEl) eEl.innerText = `${Math.round(h.needs.energy)}%`;
+      const eBar = card.querySelector('.bar-fill.fill-energy');
+      if (eBar) eBar.style.width = `${Math.min(100, Math.max(0, h.needs.energy))}%`;
+
+      const lEl = card.querySelector('.val-libido');
+      if (lEl) lEl.innerText = `${Math.round(h.needs.libido)}%`;
+      const lBar = card.querySelector('.bar-fill.fill-libido');
+      if (lBar) lBar.style.width = `${Math.min(100, Math.max(0, h.needs.libido))}%`;
+
+      const aEl = card.querySelector('.val-age');
+      if (aEl) aEl.innerText = `${ageInt} / ${Math.floor(h.maxAgeYears)} J.`;
+      const aBar = card.querySelector('.bar-fill.fill-age');
+      if (aBar) aBar.style.width = `${Math.min(100, (h.ageYears / h.maxAgeYears) * 100)}%`;
+    }
+  }
+}
+
 function updateUI() {
   stockFireEl.innerText = `${Math.round(fireState.intensity)}%`;
   stockStoneEl.innerText = campfireStock.stone;
@@ -55,63 +219,102 @@ function updateUI() {
   stockFoodEl.innerText = campfireStock.food;
   stockWaterEl.innerText = campfireStock.water;
 
-  let html = '';
-  for (const h of humans) {
-    const isSel = (h.id === selectedHumanId);
-    const ageInt = Math.floor(h.ageYears);
-    const statusLabel = h.isAlive ? h.state : 'verstorben';
-
-    html += `
-      <div class="human-card ${isSel ? 'selected' : ''} ${!h.isAlive ? 'dead' : ''}" onclick="selectHuman(${h.id})">
-        <div class="human-header">
-          <span>${h.name} (${ageInt} J., ${h.gender === 'm' ? '♂' : '♀'})</span>
-          <span class="human-role">${h.role}</span>
-        </div>
-        <div style="font-size:0.66rem; color:#9ca3af; margin-bottom:4px;">
-          Aktion: <b>${statusLabel}</b> | Nutzen: <b>+${h.utilityContributed}</b>
-          ${!h.isAlive && h.deathCause ? `<div style="color:#f87171; font-size:0.64rem; margin-top:2px;">Ursache: ${h.deathCause}</div>` : ''}
-        </div>
-
-        ${h.isAlive ? `
-          <div class="bar-row">
-            <div class="bar-label"><span>Wasser</span><span>${Math.round(h.needs.water)}%</span></div>
-            <div class="bar-bg"><div class="bar-fill fill-water" style="width: ${h.needs.water}%"></div></div>
-          </div>
-
-          <div class="bar-row">
-            <div class="bar-label"><span>Nahrung</span><span>${Math.round(h.needs.food)}%</span></div>
-            <div class="bar-bg"><div class="bar-fill fill-hunger" style="width: ${h.needs.food}%"></div></div>
-          </div>
-
-          <div class="bar-row">
-            <div class="bar-label"><span>Entleerungsdruck</span><span>${Math.round(h.needs.bladder)}%</span></div>
-            <div class="bar-bg"><div class="bar-fill fill-bladder" style="width: ${h.needs.bladder}%"></div></div>
-          </div>
-
-          <div class="bar-row">
-            <div class="bar-label"><span>Energie</span><span>${Math.round(h.needs.energy)}%</span></div>
-            <div class="bar-bg"><div class="bar-fill fill-energy" style="width: ${h.needs.energy}%"></div></div>
-          </div>
-
-          <div class="bar-row">
-            <div class="bar-label"><span>Paarungstrieb</span><span>${Math.round(h.needs.libido)}%</span></div>
-            <div class="bar-bg"><div class="bar-fill fill-libido" style="width: ${h.needs.libido}%"></div></div>
-          </div>
-
-          <div class="bar-row">
-            <div class="bar-label"><span>Alterung</span><span>${ageInt} / ${Math.floor(h.maxAgeYears)} J.</span></div>
-            <div class="bar-bg"><div class="bar-fill fill-age" style="width: ${(h.ageYears / h.maxAgeYears) * 100}%"></div></div>
-          </div>
-        ` : '<div style="color:#ef4444; font-size:0.68rem; margin-top:3px;">Biophysikalisch erloschen.</div>'}
-      </div>
-    `;
+  // 1. Weltzeit & Jahreslauf (synchron mit biologischem Alterungstakt)
+  const currentYear = Math.floor(START_YEAR + elapsedYears);
+  if (worldYearEl) {
+    worldYearEl.innerText = `${currentYear.toLocaleString('de-DE')} v. Chr.`;
   }
-  inspectorBox.innerHTML = html;
+  if (elapsedYearsEl) {
+    elapsedYearsEl.innerText = `Klan-Jahr ${Math.floor(elapsedYears)}`;
+  }
+  if (simSeasonEl) {
+    const seasons = ['Frühling 🌱', 'Sommer ☀️', 'Herbst 🍂', 'Winter ❄️'];
+    const sIdx = Math.floor((elapsedYears % 1) * 4);
+    simSeasonEl.innerText = seasons[sIdx];
+  }
+
+  // 2. Klan-Demographie & Populationsstatistik
+  const living = humans.filter(h => h.isAlive);
+  const totalLiving = living.length;
+  const recentDead = humans.filter(h => !h.isAlive).length;
+  const totalDead = historicalDeathsCount + recentDead;
+
+  const males = living.filter(h => h.gender === 'm').length;
+  const females = living.filter(h => h.gender === 'f').length;
+
+  let avgAgeStr = '0.0 J.';
+  let spanStr = 'Keine';
+  if (totalLiving > 0) {
+    const ages = living.map(h => h.ageYears);
+    const avg = (ages.reduce((a, b) => a + b, 0) / totalLiving).toFixed(1);
+    avgAgeStr = `${avg} J.`;
+    const minA = Math.floor(Math.min(...ages));
+    const maxA = Math.floor(Math.max(...ages));
+    spanStr = `Spanne: ${minA}–${maxA} J.`;
+  }
+
+  if (demoCountEl) demoCountEl.innerText = totalLiving;
+  if (demoCountSubEl) demoCountSubEl.innerText = totalDead > 0 ? `${totalDead} verstorben` : 'Vollzählig';
+
+  if (demoGenderEl) demoGenderEl.innerText = `${males}♂ · ${females}♀`;
+  const mPct = totalLiving > 0 ? Math.round((males / totalLiving) * 100) : 0;
+  const fPct = totalLiving > 0 ? Math.round((females / totalLiving) * 100) : 0;
+  if (demoGenderSubEl) demoGenderSubEl.innerText = `${mPct}% ♂ · ${fPct}% ♀`;
+
+  if (demoAgeEl) demoAgeEl.innerText = avgAgeStr;
+  if (demoAgeSubEl) demoAgeSubEl.innerText = spanStr;
+
+  // 3. Hominiden-Karten im Inspektor
+  renderOrUpdateCards(humans);
 }
 
-window.selectHuman = function(id) {
+// Direkte Hominiden-Selektion mit weichem Scrollsprung in die Sidebar
+function selectHuman(id, fromCardClick = false) {
   selectedHumanId = id;
-};
+  const h = humans.find(item => item.id === id);
+  if (!h) return;
+
+  if (!fromCardClick) {
+    logEvent(`👤 ${h.name} (${Math.floor(h.ageYears)} J., ${h.role}) fokussiert.`);
+  }
+
+  // Sanftes Scrollen zur Personenkarte & optisches Pulsieren
+  const card = document.getElementById(`human-card-${id}`);
+  if (card && inspectorBox) {
+    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    card.classList.remove('flash-highlight');
+    void card.offsetWidth; // Force Reflow für restartable CSS Keyframe-Animation
+    card.classList.add('flash-highlight');
+  }
+}
+window.selectHuman = selectHuman;
+
+// Präzise Treffererkennung für Hominiden auf dem Canvas (Körper, Kopf, Füße)
+function findHumanAtScreen(sx, sy) {
+  const sorted = [...humans].sort((a, b) => (b.x + b.y) - (a.x + a.y));
+  for (const h of sorted) {
+    if (!h.isAlive) continue;
+    const pos = camera.gridToScreen(h.x, h.y);
+    const cx = pos.x;
+    const cy = pos.y + (32 / 2) * camera.zoom;
+    const scale = (h.ageYears < 10) ? 0.65 : (h.ageYears > 50 ? 0.9 : 1.0);
+    const bodyCenterY = cy - 8 * scale * camera.zoom;
+
+    // Bildschirmabstand zu Torso/Kopf
+    const distScreen = Math.hypot(sx - cx, sy - bodyCenterY);
+    const hitRadius = Math.max(16, 22 * camera.zoom * scale);
+    if (distScreen <= hitRadius) {
+      return h;
+    }
+
+    // Bodenkachel-Abstand um die Füße
+    const grid = camera.screenToGrid(sx, sy);
+    if (Math.hypot(h.x - grid.x, h.y - grid.y) < 1.0) {
+      return h;
+    }
+  }
+  return null;
+}
 
 document.querySelectorAll('.tool-btn').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -160,16 +363,34 @@ window.addEventListener('mousemove', (e) => {
     dragStartY = e.clientY;
   } else {
     hoveredGrid = camera.screenToGrid(mouseX, mouseY);
+    const hHover = findHumanAtScreen(mouseX, mouseY);
+    if (hHover) {
+      container.style.cursor = 'pointer';
+    } else {
+      container.style.cursor = 'grab';
+    }
   }
 });
 
 window.addEventListener('mouseup', (e) => {
   if (isDragging) {
     isDragging = false;
+    container.style.cursor = 'grab';
     const movedDist = Math.hypot(e.clientX - downClientX, e.clientY - downClientY);
     if (movedDist < 6) {
       const rect = canvas.getBoundingClientRect();
-      applyToolAtScreen(e.clientX - rect.left, e.clientY - rect.top);
+      const sx = e.clientX - rect.left;
+      const sy = e.clientY - rect.top;
+
+      // 1. Priorität: Klick direkt auf einen Humanoiden fokussiert ihn & springt in Sidebar
+      const clickedH = findHumanAtScreen(sx, sy);
+      if (clickedH) {
+        selectHuman(clickedH.id);
+        return;
+      }
+
+      // 2. Priorität: Kachel-Aktion mit ausgewähltem Werkzeug
+      applyToolAtScreen(sx, sy);
     }
   }
 });
@@ -236,11 +457,9 @@ function applyToolAtScreen(sx, sy) {
       tile.shelter = { condition: 100, capacity: 2 };
       logEvent(`⛺ Schutzhütte platziert bei [${grid.x}, ${grid.y}] (Kapazität: 2).`);
     } else if (activeTool === 'inspect') {
-      for (const h of humans) {
-        if (h.isAlive && Math.hypot(h.x - grid.x, h.y - grid.y) < 1.2) {
-          selectedHumanId = h.id;
-          break;
-        }
+      const hNear = humans.find(h => h.isAlive && Math.hypot(h.x - grid.x, h.y - grid.y) < 1.3);
+      if (hNear) {
+        selectHuman(hNear.id);
       }
     }
   }
@@ -252,6 +471,11 @@ let lastTime = performance.now();
 function loop(now) {
   const dtSec = Math.min(0.1, (now - lastTime) / 1000) * simSpeed;
   lastTime = now;
+
+  // 0. Weltzeit-Fortschritt (exakt synchronisiert mit Alterung: 50s Simulationszeit = 1 Jahr)
+  if (dtSec > 0) {
+    elapsedYears += (dtSec / 50);
+  }
 
   // 1. Ökologie & dezentrale Feuer-/Hütten-Thermodynamik
   updateEcology(map, dtSec, logEvent);
@@ -271,8 +495,16 @@ function loop(now) {
   maybeSpawnForeignWanderer(humans, logEvent, map);
 
   // 4. Hominiden
-  for (const h of humans) {
+  for (let i = humans.length - 1; i >= 0; i--) {
+    const h = humans[i];
     h.update(dtSec, map, humans, animals, logEvent);
+    // Verstorbene werden 1 Jahr nach ihrem Tod (50s) aus der Liste & Welt entfernt
+    if (!h.isAlive && (h.timeSinceDeathYears || 0) >= 1.0) {
+      historicalDeathsCount++;
+      if (selectedHumanId === h.id) selectedHumanId = null;
+      humans.splice(i, 1);
+      logEvent(`🌿 Die sterblichen Überreste von ${h.name} sind nach 1 Jahr vergangen und eins mit der Natur geworden.`);
+    }
   }
 
   // 5. Rendern mit Feuer-Intensität

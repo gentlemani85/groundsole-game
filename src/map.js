@@ -1,4 +1,4 @@
-import { MAP_SIZE, CAMP_CENTER, SHELTER_CONFIG, campfireStock, fireState } from './config.js?v=8';
+import { MAP_SIZE, CAMP_CENTER, SHELTER_CONFIG, campfireStock, fireState } from './config.js';
 
 export function createMap() {
   const map = [];
@@ -49,13 +49,26 @@ export function createMap() {
         };
         npk = 55;
       }
-      // Pfad zum Wasser
-      else if (y === CAMP_CENTER.y && x >= CAMP_CENTER.x && x <= 19) {
+      // Pfad zum Wasser (als initialer Trampelpfad)
+      let isDesirePath = false;
+      let trample = 0;
+      if (y === CAMP_CENTER.y && x >= CAMP_CENTER.x && x <= 19) {
         type = 'path';
+        isDesirePath = true;
+        trample = 90;
       }
-      // Zentrales Stammesfeuer: Am Anfang ist nur kalte Vorbereitung da ('grass'),
-      // die Hominiden müssen das Feuer erst selbst entzünden!
-      // (Erst durch Entfachen wird es zu 'fire')
+      // Zentrales Stammesfeuer: Brennt zu Beginn bei 100%
+      let fireObj = null;
+      if (x === CAMP_CENTER.x && y === CAMP_CENTER.y) {
+        type = 'fire';
+        plant = null;
+        fireObj = {
+          intensity: 100,
+          woodBurnTimer: 0,
+          wood: 0,
+          isCampCenter: true
+        };
+      }
 
       // Blumen auf magerem Boden
       const flowerDots = [];
@@ -76,7 +89,10 @@ export function createMap() {
         npk: npk,
         plant: plant,
         poop: null,
-        flowerDots: flowerDots
+        flowerDots: flowerDots,
+        trample: trample,
+        isDesirePath: isDesirePath,
+        fire: fireObj
       };
     }
   }
@@ -145,6 +161,31 @@ export function updateEcology(map, dtSec, logEvent) {
 
       if (tile.type === 'grass' && tile.npk < 45) {
         tile.npk = Math.min(45, tile.npk + dtSec * 0.08);
+      }
+
+      // ==========================================
+      // TRAMPELPFAD-RENATURIERUNG (Sukzession der Grasnarbe)
+      // Ungenutzte Trampelpfade werden von der Wiese zurückerobert!
+      // ==========================================
+      if (tile.trample && tile.trample > 0) {
+        tile.trample = Math.max(0, tile.trample - dtSec * 0.35);
+      }
+      if (tile.type === 'path' && tile.isDesirePath && (!tile.trample || tile.trample <= 0)) {
+        tile.type = 'grass';
+        tile.isDesirePath = false;
+        tile.trample = 0;
+        if (tile.npk < 32 && (!tile.flowerDots || tile.flowerDots.length === 0)) {
+          tile.flowerDots = [];
+          const count = 2 + Math.floor(Math.random() * 3);
+          for (let i = 0; i < count; i++) {
+            tile.flowerDots.push({
+              dx: (Math.random() - 0.5) * 22,
+              dy: (Math.random() - 0.5) * 11,
+              color: Math.random() < 0.5 ? '#f43f5e' : '#fbbf24',
+              size: 0.9 + Math.random() * 0.7
+            });
+          }
+        }
       }
 
       // ==========================================

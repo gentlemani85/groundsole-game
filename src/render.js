@@ -1,4 +1,4 @@
-import { TILE_W, TILE_H, MAP_SIZE, CAMP_CENTER } from './config.js?v=8';
+import { TILE_W, TILE_H, MAP_SIZE, CAMP_CENTER } from './config.js';
 
 export class Renderer {
   constructor(ctx, camera) {
@@ -701,9 +701,16 @@ export class Renderer {
     const cx = pos.x;
     const cy = pos.y + (TILE_H / 2) * zoom;
 
+    const isBaby = (h.ageYears < 4);
+    const isChild = (h.ageYears >= 4 && h.ageYears < 12);
+    const isElder = (h.ageYears > 50);
+
+    const shadowW = isBaby ? 2.6 : (isChild ? 3.8 : 5.8);
+    const shadowH = isBaby ? 1.4 : (isChild ? 2.0 : 2.8);
+
     ctx.save();
     ctx.beginPath();
-    ctx.ellipse(cx, cy + 2 * zoom, (h.ageYears < 10 ? 3.5 : 5.8) * zoom, (h.ageYears < 10 ? 2 : 2.8) * zoom, 0, 0, Math.PI * 2);
+    ctx.ellipse(cx, cy + 2 * zoom, shadowW * zoom, shadowH * zoom, 0, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(0,0,0,0.28)';
     ctx.fill();
 
@@ -711,17 +718,21 @@ export class Renderer {
       ctx.strokeStyle = '#f59e0b';
       ctx.lineWidth = 1.8 * zoom;
       ctx.beginPath();
-      ctx.ellipse(cx, cy + 2 * zoom, 9.5 * zoom, 4.8 * zoom, 0, 0, Math.PI * 2);
+      ctx.ellipse(cx, cy + 2 * zoom, (isBaby ? 5.5 : (isChild ? 7.5 : 9.5)) * zoom, (isBaby ? 2.8 : (isChild ? 3.8 : 4.8)) * zoom, 0, 0, Math.PI * 2);
       ctx.stroke();
     }
 
     let bobbing = 0;
     if (h.state === 'moving') {
-      bobbing = Math.abs(Math.sin(Date.now() * 0.012)) * 2.8 * zoom;
+      bobbing = Math.abs(Math.sin(Date.now() * 0.012)) * (isBaby ? 1.4 : 2.8) * zoom;
+    } else if (h.state === 'playing') {
+      bobbing = Math.abs(Math.sin(Date.now() * 0.018)) * 3.6 * zoom;
     }
 
-    const scale = (h.ageYears < 10) ? 0.65 : (h.ageYears > 50 ? 0.9 : 1.0);
-    const bodyY = cy - (6 * scale) * zoom - bobbing;
+    const scale = isBaby ? 0.44 : (isChild ? 0.68 : (isElder ? 0.9 : 1.0));
+    const isSittingAtFire = (h.state === 'socializing' && h.actionIntent === 'sit_campfire');
+    const sitOffset = isSittingAtFire ? 3.0 * zoom * scale : 0;
+    const bodyY = cy - (6 * scale) * zoom - bobbing + sitOffset;
 
     if (!h.isAlive) {
       ctx.fillStyle = '#64748b';
@@ -748,6 +759,18 @@ export class Renderer {
     ctx.beginPath();
     ctx.arc(cx, bodyY - 7.5 * scale * zoom, 2.6 * scale * zoom, Math.PI, Math.PI * 2);
     ctx.fill();
+
+    // Sprech- und Sozial-Icons über den Figuren
+    if (h.state === 'socializing') {
+      ctx.font = `${8 * zoom}px sans-serif`;
+      ctx.textAlign = 'center';
+      const icon = (h.actionIntent === 'sit_campfire') ? '🔥' : '🗣️';
+      ctx.fillText(icon, cx, bodyY - 11 * scale * zoom);
+    } else if (h.state === 'playing') {
+      ctx.font = `${8 * zoom}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText('⭐', cx, bodyY - 11 * scale * zoom);
+    }
 
     if (h.carried) {
       ctx.font = `${10 * zoom}px sans-serif`;

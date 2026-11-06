@@ -1,5 +1,5 @@
-import { campfireStock, fireState, MAP_SIZE, CAMP_CENTER, SHELTER_CONFIG } from './config.js?v=8';
-import { findPath, isTileWalkable } from './pathfinding.js?v=8';
+import { campfireStock, fireState, MAP_SIZE, CAMP_CENTER, SHELTER_CONFIG } from './config.js';
+import { findPath, isTileWalkable } from './pathfinding.js';
 
 let nextId = 4;
 
@@ -24,6 +24,7 @@ export class Human {
     this.targetX = x;
     this.targetY = y;
     this.tint = tint;
+    this.motherId = null; // Für Säuglinge (< 4 Jahre)
 
     this.ageYears = ageYears;
     this.maxAgeYears = 58 + Math.random() * 14;
@@ -71,10 +72,27 @@ export class Human {
   }
 
   update(dt, map, humans, animals, logEvent) {
-    if (!this.isAlive || dt === 0) return;
+    if (!this.isAlive) {
+      if (dt > 0) {
+        this.timeSinceDeathYears = (this.timeSinceDeathYears || 0) + (dt / 50);
+      }
+      return;
+    }
 
     // 1. Alterung & präzise Todesursachen-Ermittlung
+    const prevAge = this.ageYears;
     this.ageYears += (dt / 50);
+
+    // Entwicklungsübergang mit 4 Jahren (vom Tragling zum freilaufenden Kind)
+    if (prevAge < 4 && this.ageYears >= 4) {
+      this.role = 'Kind (Heranwachsend)';
+      logEvent(`🧒 ${this.name} ist 4 Jahre alt geworden und erkundet nun spielerisch das Lager!`);
+    }
+    // Entwicklungsübergang mit 12 Jahren (volle Arbeitsfähigkeit wie Erwachsene)
+    if (prevAge < 12 && this.ageYears >= 12 && this.role.includes('Kind')) {
+      this.role = (this.gender === 'm') ? 'Jäger / Steinklopfer' : 'Sammlerin & Hüterin';
+      logEvent(`✨ ${this.name} hat das 12. Lebensjahr erreicht und arbeitet nun vollwertig für den Klan.`);
+    }
 
     if (this.needs.water <= 0) {
       this.die('verdurstet (Wassermangel)', logEvent);
@@ -87,6 +105,48 @@ export class Human {
     if (this.ageYears >= this.maxAgeYears) {
       this.die('biologisches Alterungsmaximum erreicht', logEvent);
       return;
+    }
+
+    // ==========================================
+    // SÄUGLING / TRAGLING (< 4 Jahre)
+    // Bleibt immer bei der Mutter, trägt nichts bei, saugt Muttermilch.
+    // ==========================================
+    if (this.ageYears < 4) {
+      this.role = 'Säugling / Tragling';
+      this.carried = null;
+
+      // Finde lebende Mutter oder Allomutter
+      let mother = humans.find(h => h.id === this.motherId && h.isAlive);
+      if (!mother) {
+        mother = humans.find(h => h.isAlive && h.gender === 'f' && h.ageYears >= 13);
+        if (mother) this.motherId = mother.id;
+      }
+
+      if (mother) {
+        // Säugling ist physisch bei der Mutter
+        this.x = mother.x + 0.12;
+        this.y = mother.y + 0.08;
+        this.state = (mother.state === 'moving') ? 'moving' : 'resting';
+        this.actionIntent = 'with_mother';
+        this.path = [];
+
+        // Wird durch Laktation versorgt
+        this.needs.water = Math.max(this.needs.water, 75);
+        this.needs.food = Math.max(this.needs.food, 75);
+        this.needs.energy = Math.max(this.needs.energy, 70);
+        this.needs.libido = 0;
+
+        // Mutter stillt das Kind
+        mother.needs.water = Math.max(0, mother.needs.water - dt * 0.12);
+        mother.needs.food = Math.max(0, mother.needs.food - dt * 0.10);
+        mother.nursingTimer = 5.0; // Verhindert erneute Empfängnis während Laktation
+      } else {
+        // Waise wartet am Feuer im Lager
+        this.x = CAMP_CENTER.x;
+        this.y = CAMP_CENTER.y;
+        this.state = 'resting';
+      }
+      return; // Keine Erwachsenen-Tasks für Säuglinge!
     }
 
     // 2. Biophysikalischer Stoffwechsel & Kälte
@@ -103,10 +163,12 @@ export class Human {
 
     // Kinder verbrauchen biophysikalisch weniger Kalorien & Wasser als schwere Erwachsene
     const bodyScale = this.ageYears < 13 ? 0.55 : 1.0;
+    const isSocializing = (this.state === 'socializing');
+    const energyMod = isSocializing ? -2.2 : (0.25 * coldPenalty); // Regeneriert im Sozialzustand!
 
     this.needs.water = Math.max(0, this.needs.water - dt * (0.75 * bodyScale));
-    this.needs.food = Math.max(0, this.needs.food - dt * (0.45 * coldPenalty * bodyScale));
-    this.needs.energy = Math.max(0, this.needs.energy - dt * (0.25 * coldPenalty));
+    this.needs.food = Math.max(0, this.needs.food - dt * (0.45 * coldPenalty * bodyScale * (isSocializing ? 0.6 : 1.0)));
+    this.needs.energy = Math.min(100, Math.max(0, this.needs.energy - dt * energyMod));
     this.needs.bladder = Math.min(100, this.needs.bladder + dt * 0.8);
 
     // Stillzeit läuft ab
@@ -137,6 +199,50 @@ export class Human {
         return;
       }
 
+      // ==========================================
+      // KINDER (4 bis 12 Jahre)
+      // Helfen nur wenig mit, spielen meist zusammen (Peer-Play)
+      // ==========================================
+      if (this.ageYears < 12) {
+        if (this.needs.bladder > 85) {
+          this.seekRelief(map);
+          return;
+        }
+        if (this.needs.water < 55) {
+          this.seekWater(map);
+          return;
+        }
+        if (this.needs.food < 50) {
+          this.seekFood(map);
+          return;
+        }
+        if (this.needs.energy < 25) {
+          this.seekShelterOrFire(map, humans);
+          return;
+        }
+
+        // 1. Peer-Play: Spielen mit anderen Kindern (4 bis 12 Jahre)
+        const peers = humans.filter(h => h.id !== this.id && h.isAlive && h.ageYears >= 4 && h.ageYears < 12);
+        if (peers.length > 0 && Math.random() < 0.72) {
+          const friend = peers[Math.floor(Math.random() * peers.length)];
+          this.playWithPeer(friend, map, logEvent);
+          return;
+        }
+
+        // 2. Gelegentlicher leichter Beitrag (Beeren sammeln am Lager)
+        if (Math.random() < 0.35) {
+          const bush = this.findNearestBushWithBerries(map);
+          if (bush && Math.hypot(bush.x - CAMP_CENTER.x, bush.y - CAMP_CENTER.y) < 8) {
+            this.setMoveTarget(map, bush.x, bush.y, 'gather_berries');
+            return;
+          }
+        }
+
+        // 3. Neugieriges Herumtoben in Lagernähe
+        this.wanderNearCamp(map);
+        return;
+      }
+
       if (this.needs.bladder > 85) {
         this.seekRelief(map);
       } else if (this.needs.water < 55) { // Trinkt bereits ab 55% Mangel (nicht erst bei 35%)
@@ -154,8 +260,20 @@ export class Human {
       else if (this.needs.libido > 50 && this.gender === 'm') {
         this.seekMate(humans, map);
       } 
-      // Nutzen & Lager-Aufbau
+      // Nutzen, soziales Miteinander & Lager-Aufbau
       else if (this.needs.water > 55 && this.needs.food > 55) {
+        // 1. Soziales Beisammensein am wärmenden Lagerfeuer (Klan-Kreis)
+        if (fireState.intensity > 15 && Math.random() < 0.45) {
+          if (this.seekCampfireCircle(map, humans, logEvent)) return;
+        }
+
+        // 2. Kurze Begegnung & Plaudern mit Artgenossen in Gehweite
+        const nearbyPeer = humans.find(h => h.id !== this.id && h.isAlive && h.state === 'idle' && Math.hypot(h.x - this.x, h.y - this.y) < 1.8);
+        if (nearbyPeer && Math.random() < 0.35) {
+          this.chatWithPeer(nearbyPeer, logEvent);
+          return;
+        }
+
         this.seekProductiveTask(map, humans, animals);
       } else {
         this.wander(map);
@@ -276,13 +394,28 @@ export class Human {
       const onPath = (curTile && curTile.type === 'path');
       const inWater = (curTile && curTile.type === 'water');
 
+      // Trampelpfad-Mechanik: Viel begangene Kacheln werden organisch zu Pfaden
+      if (curTile) {
+        curTile.trample = Math.min(100, (curTile.trample || 0) + dt * 16);
+        if (curTile.type === 'grass' && curTile.trample >= 55) {
+          curTile.type = 'path';
+          curTile.isDesirePath = true;
+          curTile.plant = null;
+          curTile.flowerDots = [];
+        }
+      }
+
       let terrainFactor = 1.0;
       if (onPath) terrainFactor = 1.6;
       else if (inWater) terrainFactor = 0.65;
 
+      // Mutter ist durch das Tragen eines Säuglings (< 4 Jahre) langsamer
+      const hasInfant = humans.some(h => h.isAlive && h.motherId === this.id && h.ageYears < 4);
+      const infantSpeedFactor = hasInfant ? 0.72 : 1.0;
+
       const isHuntingSprint = (this.actionIntent === 'hunt_animal');
       const sprintFactor = isHuntingSprint ? 1.45 : 1.0;
-      const speed = terrainFactor * sprintFactor * (this.ageYears > 50 ? 0.75 : 1.0) * dt;
+      const speed = terrainFactor * sprintFactor * infantSpeedFactor * (this.ageYears > 50 ? 0.75 : 1.0) * dt;
 
       if (dist <= speed) {
         this.x = targetWp.x;
@@ -310,6 +443,7 @@ export class Human {
     this.isAlive = false;
     this.state = 'dead';
     this.deathCause = cause;
+    this.timeSinceDeathYears = 0;
     this.tint = '#4b5563';
     logEvent(`🪦 ${this.name} ist mit ${Math.floor(this.ageYears)} Jahren gestorben: ${cause}.`);
   }
@@ -725,6 +859,19 @@ export class Human {
         }
       }
       this.utilityContributed += 5;
+    } else if (this.actionIntent === 'sit_campfire') {
+      this.state = 'socializing';
+      this.stateTimer = 10.0 + Math.random() * 8.0;
+      // Gibt es Artgenossen am Feuer?
+      const peersAtFire = humans.filter(h => h.id !== this.id && h.isAlive && h.state === 'socializing' && Math.hypot(h.x - CAMP_CENTER.x, h.y - CAMP_CENTER.y) < 3.2);
+      if (peersAtFire.length > 0 && Math.random() < 0.4) {
+        logEvent(`🔥 ${this.name} gesellt sich zu ${peersAtFire[0].name} ans Feuer. Sie wärmen sich und teilen Laute.`);
+      }
+    } else if (this.actionIntent === 'play') {
+      this.state = 'playing';
+      this.stateTimer = 4.0 + Math.random() * 3.0;
+    } else if (this.actionIntent === 'explore') {
+      this.state = 'idle';
     } else {
       this.state = 'idle';
     }
@@ -813,8 +960,75 @@ export class Human {
         this.mateTarget.needs.libido = 0;
         this.mateTarget.pregnancyTimer = 14.0;
       }
+    } else if (this.state === 'playing') {
+      this.needs.energy = Math.min(100, this.needs.energy + 10);
+    } else if (this.state === 'socializing') {
+      this.needs.energy = Math.min(100, this.needs.energy + 12);
+      this.utilityContributed += 2;
     }
     this.state = 'idle';
+  }
+
+  seekCampfireCircle(map, humans, logEvent) {
+    const candidates = [];
+    for (let dy = -2; dy <= 2; dy++) {
+      for (let dx = -2; dx <= 2; dx++) {
+        const d = Math.hypot(dx, dy);
+        if (d >= 1.0 && d <= 2.2) {
+          const tx = CAMP_CENTER.x + dx;
+          const ty = CAMP_CENTER.y + dy;
+          if (isTileWalkable(map, tx, ty)) {
+            const occupied = humans.some(h => h.isAlive && Math.hypot(h.x - tx, h.y - ty) < 0.6);
+            if (!occupied) {
+              candidates.push({ x: tx, y: ty });
+            }
+          }
+        }
+      }
+    }
+    if (candidates.length > 0) {
+      const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+      return this.setMoveTarget(map, chosen.x, chosen.y, 'sit_campfire');
+    }
+    return false;
+  }
+
+  chatWithPeer(peer, logEvent) {
+    this.state = 'socializing';
+    this.actionIntent = 'chat';
+    this.stateTimer = 4.0 + Math.random() * 3.0;
+
+    peer.state = 'socializing';
+    peer.actionIntent = 'chat';
+    peer.stateTimer = this.stateTimer;
+    peer.path = [];
+
+    this.needs.energy = Math.min(100, this.needs.energy + 8);
+    peer.needs.energy = Math.min(100, peer.needs.energy + 8);
+
+    if (Math.random() < 0.35) {
+      logEvent(`🗣️ ${this.name} und ${peer.name} halten inne und tauschen Laute aus.`);
+    }
+  }
+
+  playWithPeer(friend, map, logEvent) {
+    const rx = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(friend.x + (Math.random() - 0.5) * 4)));
+    const ry = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(friend.y + (Math.random() - 0.5) * 4)));
+    if (isTileWalkable(map, rx, ry)) {
+      this.setMoveTarget(map, rx, ry, 'play');
+      this.needs.energy = Math.min(100, this.needs.energy + 5);
+      if (Math.random() < 0.2) {
+        logEvent(`🧒 ${this.name} und ${friend.name} spielen ausgelassen Fangen im Lager.`);
+      }
+    }
+  }
+
+  wanderNearCamp(map) {
+    const rx = Math.max(1, Math.min(MAP_SIZE - 2, CAMP_CENTER.x + Math.floor((Math.random() - 0.5) * 8)));
+    const ry = Math.max(1, Math.min(MAP_SIZE - 2, CAMP_CENTER.y + Math.floor((Math.random() - 0.5) * 8)));
+    if (isTileWalkable(map, rx, ry)) {
+      this.setMoveTarget(map, rx, ry, 'explore');
+    }
   }
 
   giveBirth(humans, logEvent) {
@@ -832,11 +1046,13 @@ export class Human {
     const babyName = pool[Math.floor(Math.random() * pool.length)];
     const babyTint = babyGender === 'm' ? '#ea580c' : '#0ea5e9';
 
-    this.nursingTimer = 10.0;
+    // Natürlicher Geburtenabstand (Laktationspause)
+    this.nursingTimer = 50.0;
 
-    const baby = new Human(nextId++, babyName, babyGender, 'Kind / Nachwuchs', CAMP_CENTER.x, CAMP_CENTER.y, babyTint, 0.5);
+    const baby = new Human(nextId++, babyName, babyGender, 'Säugling / Tragling', this.x + 0.1, this.y + 0.1, babyTint, 0.0);
+    baby.motherId = this.id;
     humans.push(baby);
-    logEvent(`👶 Geburt! ${babyGender === 'm' ? 'Junge' : 'Mädchen'} ${babyName} erweitert den Klan.`);
+    logEvent(`👶 Geburt! ${babyGender === 'm' ? 'Junge' : 'Mädchen'} ${babyName} wird von Mutter ${this.name} getragen.`);
   }
 
   findNearestTile(map, type) {

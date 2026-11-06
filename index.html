@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-  <title>Acheuléen-Diorama (~400.000 v. Chr.)</title>
+  <title>Acheuléen-Diorama (-600.000 v. Chr.)</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -15,8 +15,22 @@
 
   <div id="ui-panel">
     <div class="panel-header">
-      <h1>Acheuléen-Diorama (~400.000 v. Chr.)</h1>
-      <p>Bodenökologie (NPK-Dünger), Pflanzenwachstum & Faustkeil-Subsistenz.</p>
+      <div class="title-row">
+        <h1>Acheuléen-Diorama</h1>
+        <span class="era-badge">Altpaläolithikum</span>
+      </div>
+      <!-- Dynamische Weltzeit & Jahreslauf -->
+      <div class="time-card">
+        <div class="time-main">
+          <span class="time-icon">⏳</span>
+          <span class="time-year" id="world-year">-600.000 v. Chr.</span>
+        </div>
+        <div class="time-sub">
+          <span id="elapsed-years">Klan-Jahr 0</span>
+          <span class="time-dot">·</span>
+          <span id="sim-season">Frühling 🌱</span>
+        </div>
+      </div>
     </div>
 
     <!-- Stammes-Vorratslager (am Lagerfeuer) -->
@@ -56,7 +70,27 @@
       <button class="tool-btn" data-tool="shelter">⛺ Hütte</button>
     </div>
 
-    <div class="section-title">Akteure & Stoffwechsel (Acheuléen)</div>
+    <!-- Klan-Demographie & Populationsstatistik -->
+    <div class="section-title">Klan-Demographie</div>
+    <div class="demographics-card">
+      <div class="demo-item">
+        <span class="demo-label">👥 Population</span>
+        <span class="demo-val" id="demo-count">4</span>
+        <span class="demo-sub" id="demo-count-sub">4 lebend</span>
+      </div>
+      <div class="demo-item">
+        <span class="demo-label">Geschlecht</span>
+        <span class="demo-val" id="demo-gender">2♂ · 2♀</span>
+        <span class="demo-sub" id="demo-gender-sub">50% · 50%</span>
+      </div>
+      <div class="demo-item">
+        <span class="demo-label">Ø-Alter</span>
+        <span class="demo-val" id="demo-age">27.5 J.</span>
+        <span class="demo-sub" id="demo-age-sub">Spanne: 18–50</span>
+      </div>
+    </div>
+
+    <div class="section-title">Hominiden-Inspektor (Klickbar)</div>
     <div id="inspector-box">
       <!-- Dynamischer Inhalt -->
     </div>
@@ -110,6 +144,6 @@
       });
     }
   </script>
-  <script type="module" src="src/main.js?v=8"></script>
+  <script type="module" src="src/main.js?v=11"></script>
 </body>
 </html>

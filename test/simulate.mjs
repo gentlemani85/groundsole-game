@@ -37,8 +37,12 @@ for (let i = 0; i < TICKS; i++) {
   maybeSpawnForeignWanderer(humans, logEvent, map);
 
   // Hominiden
-  for (const h of humans) {
+  for (let hIdx = humans.length - 1; hIdx >= 0; hIdx--) {
+    const h = humans[hIdx];
     h.update(dt, map, humans, animals, logEvent);
+    if (!h.isAlive && (h.timeSinceDeathYears || 0) >= 1.0) {
+      humans.splice(hIdx, 1);
+    }
   }
 
   const living = humans.filter(h => h.isAlive).length;

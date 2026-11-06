@@ -3,7 +3,7 @@
 // Findet zuverlässig den kürzesten begehbaren Pfad um tiefes Wasser herum
 // oder über seichte Furten und Pfad-Brücken hinweg.
 // =========================================================================
-import { MAP_SIZE } from './config.js?v=8';
+import { MAP_SIZE } from './config.js';
 
 export function isTileWalkable(map, x, y) {
   if (x < 0 || x >= MAP_SIZE || y < 0 || y >= MAP_SIZE) return false;
