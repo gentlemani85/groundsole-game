@@ -363,7 +363,8 @@
             tile.poop = null;
             tile.flowerDots = [];
             if (!tile.plant && tile.type === "grass") {
-              if (map2.biomeId !== "steppe" && Math.random() < 0.5) {
+              const sproutRoll = Math.random();
+              if (sproutRoll < 0.12 && map2.biomeId !== "steppe") {
                 tile.plant = {
                   type: "bush",
                   stage: 1,
@@ -375,18 +376,27 @@
                   ageTimer: 0,
                   isRootstock: false
                 };
-                logEvent2(`\u{1F331} Wilder Beerenstrauch aus Kot gekeimt! [${x}, ${y}]`);
-              } else {
+                logEvent2(`\u{1F331} Wilder Beerenstrauch keimt auf humosem Boden. [${x}, ${y}]`);
+              } else if (sproutRoll < 0.16) {
                 tile.plant = {
                   type: "tree",
                   stage: 1,
                   growthTimer: 0,
                   woodStock: 3,
                   seedVariance: Math.random(),
-                  maxAge: 900 + Math.random() * 600,
+                  maxAge: 1200 + Math.random() * 600,
                   ageTimer: 0
                 };
-                logEvent2(`\u{1F331} Baumkeimling wurzelt auf D\xFCngeland. [${x}, ${y}]`);
+                logEvent2(`\u{1F331} Ein junger Baumkeimling schl\xE4gt Wurzeln. [${x}, ${y}]`);
+              } else {
+                for (let i = 0; i < 3; i++) {
+                  tile.flowerDots.push({
+                    dx: (Math.random() - 0.5) * 20,
+                    dy: (Math.random() - 0.5) * 10,
+                    color: Math.random() < 0.5 ? "#f59e0b" : "#ec4899",
+                    size: 0.8 + Math.random() * 0.7
+                  });
+                }
               }
             }
           }
@@ -394,7 +404,7 @@
         if (tile.type === "grass" && tile.npk < 45) {
           tile.npk = Math.min(45, tile.npk + dtSec * 0.08);
         }
-        if (tile.type === "grass" && (!tile.roots || tile.roots < 3) && tile.npk >= 30 && Math.random() < 2e-3 * dtSec) {
+        if (tile.type === "grass" && (!tile.roots || tile.roots < 2) && tile.npk >= 40 && Math.random() < 6e-4 * dtSec) {
           tile.roots = (tile.roots || 0) + 1;
         }
         if (tile.trample && tile.trample > 0) {
@@ -480,7 +490,8 @@
           }
           if (p.stage < 3) {
             p.growthTimer = (p.growthTimer || 0) + dtSec * growthRate;
-            if (p.growthTimer >= 16) {
+            const targetGrowthTime = p.type === "tree" ? 130 : 24;
+            if (p.growthTimer >= targetGrowthTime) {
               p.stage++;
               p.growthTimer = 0;
               if (p.type === "bush" && p.stage === 3 && p.isRootstock) {
@@ -552,7 +563,7 @@
       for (const item of depthItems) {
         if (item.type === "rock") {
           const pos = this.cam.gridToScreen(item.x, item.y);
-          this.drawNaturalRock(pos.x, pos.y + TILE_H / 2 * this.cam.zoom);
+          this.drawNaturalRock(pos.x, pos.y + TILE_H / 2 * this.cam.zoom, item.x, item.y);
         } else if (item.type === "shelter") {
           const pos = this.cam.gridToScreen(item.x, item.y);
           this.drawPrimitiveShelter(pos.x, pos.y + TILE_H / 2 * this.cam.zoom, item.shelter);
@@ -714,6 +725,7 @@
       const ctx2 = this.ctx;
       const zoom = this.cam.zoom;
       const s = plant.stage;
+      const seed = plant.seedVariance || 0.5;
       ctx2.save();
       if (plant.isRootstock) {
         ctx2.strokeStyle = "#5c3a21";
@@ -733,30 +745,36 @@
         ctx2.restore();
         return;
       }
-      const baseR = (3.2 + s * 2.8) * zoom;
+      const varFactor = 0.85 + seed * 0.3;
+      const baseR = (3.2 + s * 2.8) * varFactor * zoom;
       ctx2.beginPath();
       ctx2.ellipse(cx, cy + 2 * zoom, baseR * 1.2, baseR * 0.55, 0, 0, Math.PI * 2);
       ctx2.fillStyle = "rgba(0,0,0,0.25)";
       ctx2.fill();
-      const foliageDark = "#1f3e17";
-      const foliageMid = "#2d5521";
-      const foliageLight = "#427532";
+      let foliageDark = "#1f3e17";
+      let foliageMid = "#2d5521";
+      let foliageLight = "#427532";
+      if (this.biomeId === "steppe") {
+        foliageDark = "#2e381b";
+        foliageMid = "#4a572a";
+        foliageLight = "#6b7b3b";
+      }
       ctx2.fillStyle = foliageDark;
       ctx2.beginPath();
-      ctx2.arc(cx - 2 * zoom, cy - baseR + 2 * zoom, baseR * 0.85, 0, Math.PI * 2);
-      ctx2.arc(cx + 2.5 * zoom, cy - baseR + 1 * zoom, baseR * 0.85, 0, Math.PI * 2);
+      ctx2.arc(cx - (2 + seed) * zoom, cy - baseR + 2 * zoom, baseR * 0.85, 0, Math.PI * 2);
+      ctx2.arc(cx + (2.5 - seed) * zoom, cy - baseR + 1 * zoom, baseR * 0.85, 0, Math.PI * 2);
       ctx2.fill();
       ctx2.fillStyle = foliageMid;
       ctx2.beginPath();
       ctx2.arc(cx, cy - baseR - 1 * zoom, baseR * 0.75, 0, Math.PI * 2);
-      ctx2.arc(cx - 3 * zoom, cy - baseR - 3 * zoom, baseR * 0.55, 0, Math.PI * 2);
+      ctx2.arc(cx - 3 * zoom, cy - baseR - (2 + seed * 2) * zoom, baseR * 0.55, 0, Math.PI * 2);
       ctx2.fill();
       ctx2.fillStyle = foliageLight;
       ctx2.beginPath();
-      ctx2.arc(cx - 1 * zoom, cy - baseR - 4 * zoom, baseR * 0.45, 0, Math.PI * 2);
+      ctx2.arc(cx - (0.5 + seed) * zoom, cy - baseR - 4 * zoom, baseR * 0.45, 0, Math.PI * 2);
       ctx2.fill();
       if (plant.berries > 0 && s >= 2) {
-        ctx2.fillStyle = "#dc2626";
+        ctx2.fillStyle = this.biomeId === "steppe" ? "#f97316" : "#dc2626";
         const berryR = 1.6 * zoom;
         ctx2.beginPath();
         if (plant.berries >= 1) ctx2.arc(cx - 3 * zoom, cy - baseR + 1 * zoom, berryR, 0, Math.PI * 2);
@@ -765,11 +783,6 @@
         if (plant.berries >= 4) ctx2.arc(cx - 2 * zoom, cy - baseR - 4 * zoom, berryR, 0, Math.PI * 2);
         if (plant.berries >= 5) ctx2.arc(cx + 2 * zoom, cy - baseR - 5 * zoom, berryR, 0, Math.PI * 2);
         ctx2.fill();
-        ctx2.fillStyle = "#fca5a5";
-        ctx2.beginPath();
-        if (plant.berries >= 1) ctx2.arc(cx - 3.4 * zoom, cy - baseR + 0.6 * zoom, 0.5 * zoom, 0, Math.PI * 2);
-        if (plant.berries >= 2) ctx2.arc(cx + 2.6 * zoom, cy - baseR - 2.4 * zoom, 0.5 * zoom, 0, Math.PI * 2);
-        ctx2.fill();
       }
       ctx2.restore();
     }
@@ -777,10 +790,14 @@
       const ctx2 = this.ctx;
       const zoom = this.cam.zoom;
       const s = plant.stage;
+      const seed = plant.seedVariance || 0.5;
       ctx2.save();
-      const trunkH = (8 + s * 9) * zoom;
+      const isPine = seed >= 0.35 && seed < 0.7;
+      const isOak = seed < 0.35;
+      const trunkH = ((isPine ? 11 : isOak ? 7 : 8) + s * 9) * zoom;
       const trunkW = (2 + s * 1.5) * zoom;
-      const crownR = (5.5 + s * 5.5) * zoom;
+      const crownR = ((isOak ? 6.5 : isPine ? 4.8 : 5.5) + s * 5.5) * zoom;
+      const lean = (seed - 0.5) * 5 * zoom;
       ctx2.beginPath();
       ctx2.ellipse(cx + 2 * zoom, cy + 2 * zoom, crownR * 1.15, crownR * 0.5, -0.2, 0, Math.PI * 2);
       ctx2.fillStyle = "rgba(0,0,0,0.28)";
@@ -788,77 +805,119 @@
       ctx2.fillStyle = "#422815";
       ctx2.beginPath();
       ctx2.moveTo(cx - trunkW, cy);
-      ctx2.lineTo(cx - trunkW * 0.6, cy - trunkH + 4 * zoom);
-      ctx2.lineTo(cx - crownR * 0.5, cy - trunkH);
-      ctx2.lineTo(cx - crownR * 0.3, cy - trunkH + 2 * zoom);
-      ctx2.lineTo(cx + trunkW * 0.5, cy - trunkH + 5 * zoom);
-      ctx2.lineTo(cx + crownR * 0.4, cy - trunkH + 1 * zoom);
-      ctx2.lineTo(cx + trunkW * 0.6, cy - trunkH + 8 * zoom);
+      ctx2.lineTo(cx + lean - trunkW * 0.6, cy - trunkH + 4 * zoom);
+      ctx2.lineTo(cx + lean - crownR * 0.4, cy - trunkH);
+      ctx2.lineTo(cx + lean + crownR * 0.3, cy - trunkH + 2 * zoom);
+      ctx2.lineTo(cx + lean + trunkW * 0.6, cy - trunkH + 8 * zoom);
       ctx2.lineTo(cx + trunkW, cy);
       ctx2.closePath();
       ctx2.fill();
       ctx2.strokeStyle = "#261408";
       ctx2.lineWidth = 0.8 * zoom;
       ctx2.stroke();
-      const crownY = cy - trunkH - crownR * 0.4;
-      ctx2.fillStyle = "#142e0f";
-      ctx2.beginPath();
-      ctx2.arc(cx - crownR * 0.4, crownY + crownR * 0.2, crownR * 0.65, 0, Math.PI * 2);
-      ctx2.arc(cx + crownR * 0.4, crownY + crownR * 0.2, crownR * 0.7, 0, Math.PI * 2);
-      ctx2.fill();
-      ctx2.fillStyle = "#1e4417";
-      ctx2.beginPath();
-      ctx2.arc(cx, crownY, crownR * 0.85, 0, Math.PI * 2);
-      ctx2.arc(cx - crownR * 0.35, crownY - crownR * 0.25, crownR * 0.6, 0, Math.PI * 2);
-      ctx2.arc(cx + crownR * 0.3, crownY - crownR * 0.2, crownR * 0.65, 0, Math.PI * 2);
-      ctx2.fill();
-      ctx2.fillStyle = "#316725";
-      ctx2.beginPath();
-      ctx2.arc(cx - crownR * 0.3, crownY - crownR * 0.45, crownR * 0.45, 0, Math.PI * 2);
-      ctx2.arc(cx + crownR * 0.1, crownY - crownR * 0.4, crownR * 0.5, 0, Math.PI * 2);
-      ctx2.fill();
+      const crownX = cx + lean;
+      const crownY = cy - trunkH - crownR * 0.35;
+      if (isPine) {
+        ctx2.fillStyle = "#102a16";
+        ctx2.beginPath();
+        ctx2.moveTo(crownX, crownY - crownR * 1.1);
+        ctx2.lineTo(crownX + crownR * 0.8, crownY + crownR * 0.5);
+        ctx2.lineTo(crownX - crownR * 0.8, crownY + crownR * 0.5);
+        ctx2.closePath();
+        ctx2.fill();
+        ctx2.fillStyle = "#183c20";
+        ctx2.beginPath();
+        ctx2.moveTo(crownX, crownY - crownR * 0.9);
+        ctx2.lineTo(crownX + crownR * 0.65, crownY + crownR * 0.1);
+        ctx2.lineTo(crownX - crownR * 0.65, crownY + crownR * 0.1);
+        ctx2.closePath();
+        ctx2.fill();
+        ctx2.fillStyle = "#265830";
+        ctx2.beginPath();
+        ctx2.moveTo(crownX, crownY - crownR * 0.7);
+        ctx2.lineTo(crownX + crownR * 0.45, crownY - crownR * 0.2);
+        ctx2.lineTo(crownX - crownR * 0.45, crownY - crownR * 0.2);
+        ctx2.closePath();
+        ctx2.fill();
+      } else {
+        const cDark = this.biomeId === "steppe" ? "#2e381b" : "#142e0f";
+        const cMid = this.biomeId === "steppe" ? "#445427" : "#1e4417";
+        const cLight = this.biomeId === "steppe" ? "#677d3b" : "#316725";
+        ctx2.fillStyle = cDark;
+        ctx2.beginPath();
+        ctx2.arc(crownX - crownR * 0.45, crownY + crownR * 0.2, crownR * 0.65, 0, Math.PI * 2);
+        ctx2.arc(crownX + crownR * 0.45, crownY + crownR * 0.2, crownR * 0.7, 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.fillStyle = cMid;
+        ctx2.beginPath();
+        ctx2.arc(crownX, crownY, crownR * 0.85, 0, Math.PI * 2);
+        ctx2.arc(crownX - crownR * 0.35, crownY - crownR * 0.25, crownR * 0.6, 0, Math.PI * 2);
+        ctx2.arc(crownX + crownR * 0.3, crownY - crownR * 0.2, crownR * 0.65, 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.fillStyle = cLight;
+        ctx2.beginPath();
+        ctx2.arc(crownX - crownR * 0.2, crownY - crownR * 0.45, crownR * 0.5, 0, Math.PI * 2);
+        ctx2.arc(crownX + crownR * 0.2, crownY - crownR * 0.4, crownR * 0.45, 0, Math.PI * 2);
+        ctx2.fill();
+      }
       ctx2.restore();
     }
-    // Stark verbesserte, plastische Naturfels-Grafik (Mehrschichtige Facetten, Moos)
-    drawNaturalRock(cx, cy) {
+    // Stark verbesserte, plastische Naturfels-Grafik mit Koordinaten-Variation & Biom-Gestein
+    drawNaturalRock(cx, cy, gx = 0, gy = 0) {
       const ctx2 = this.ctx;
       const zoom = this.cam.zoom;
       ctx2.save();
+      const r = Math.abs(Math.sin(gx * 12.9898 + gy * 78.233));
+      const rScale = 0.85 + r * 0.3;
+      const w = 9 * rScale * zoom;
+      const h = 8 * rScale * zoom;
       ctx2.beginPath();
-      ctx2.ellipse(cx, cy + 3 * zoom, 11 * zoom, 5 * zoom, 0, 0, Math.PI * 2);
+      ctx2.ellipse(cx, cy + 3 * zoom, w + 2 * zoom, 5 * zoom, 0, 0, Math.PI * 2);
       ctx2.fillStyle = "rgba(0,0,0,0.32)";
       ctx2.fill();
-      ctx2.fillStyle = "#2d333b";
+      let cDark = "#2d333b", cMid = "#485260", cLight = "#738094";
+      if (this.biomeId === "karst_canyon") {
+        cDark = "#333b47";
+        cMid = "#586578";
+        cLight = "#8e9eaf";
+      } else if (this.biomeId === "steppe") {
+        cDark = "#362e24";
+        cMid = "#5c4e3e";
+        cLight = "#8c7b66";
+      }
+      ctx2.fillStyle = cDark;
       ctx2.beginPath();
-      ctx2.moveTo(cx - 9 * zoom, cy + 2 * zoom);
-      ctx2.lineTo(cx - 6 * zoom, cy - 8 * zoom);
-      ctx2.lineTo(cx + 2 * zoom, cy - 10 * zoom);
-      ctx2.lineTo(cx + 9 * zoom, cy - 4 * zoom);
-      ctx2.lineTo(cx + 8 * zoom, cy + 3 * zoom);
+      ctx2.moveTo(cx - w, cy + 2 * zoom);
+      ctx2.lineTo(cx - w * 0.6, cy - h);
+      ctx2.lineTo(cx + w * 0.2, cy - h * 1.2);
+      ctx2.lineTo(cx + w, cy - h * 0.4);
+      ctx2.lineTo(cx + w * 0.9, cy + 3 * zoom);
       ctx2.closePath();
       ctx2.fill();
-      ctx2.fillStyle = "#485260";
+      ctx2.fillStyle = cMid;
       ctx2.beginPath();
-      ctx2.moveTo(cx - 9 * zoom, cy + 2 * zoom);
-      ctx2.lineTo(cx - 2 * zoom, cy - 7 * zoom);
-      ctx2.lineTo(cx + 4 * zoom, cy - 2 * zoom);
+      ctx2.moveTo(cx - w, cy + 2 * zoom);
+      ctx2.lineTo(cx - w * 0.2, cy - h * 0.8);
+      ctx2.lineTo(cx + w * 0.4, cy - 2 * zoom);
       ctx2.lineTo(cx - 1 * zoom, cy + 3 * zoom);
       ctx2.closePath();
       ctx2.fill();
-      ctx2.fillStyle = "#738094";
+      ctx2.fillStyle = cLight;
       ctx2.beginPath();
-      ctx2.moveTo(cx - 6 * zoom, cy - 8 * zoom);
-      ctx2.lineTo(cx + 2 * zoom, cy - 10 * zoom);
-      ctx2.lineTo(cx + 8 * zoom, cy - 5 * zoom);
-      ctx2.lineTo(cx + 2 * zoom, cy - 4 * zoom);
-      ctx2.lineTo(cx - 2 * zoom, cy - 7 * zoom);
+      ctx2.moveTo(cx - w * 0.6, cy - h);
+      ctx2.lineTo(cx + w * 0.2, cy - h * 1.2);
+      ctx2.lineTo(cx + w * 0.9, cy - h * 0.5);
+      ctx2.lineTo(cx + w * 0.2, cy - h * 0.4);
+      ctx2.lineTo(cx - w * 0.2, cy - h * 0.8);
       ctx2.closePath();
       ctx2.fill();
-      ctx2.fillStyle = "#3f6212";
-      ctx2.beginPath();
-      ctx2.arc(cx - 7 * zoom, cy + 1 * zoom, 2 * zoom, 0, Math.PI * 2);
-      ctx2.arc(cx + 6 * zoom, cy + 2 * zoom, 2.2 * zoom, 0, Math.PI * 2);
-      ctx2.fill();
+      if (this.biomeId !== "steppe") {
+        ctx2.fillStyle = "#3f6212";
+        ctx2.beginPath();
+        ctx2.arc(cx - w * 0.7, cy + 1 * zoom, 2 * zoom, 0, Math.PI * 2);
+        ctx2.arc(cx + w * 0.6, cy + 2 * zoom, 2.2 * zoom, 0, Math.PI * 2);
+        ctx2.fill();
+      }
       ctx2.restore();
     }
     // Stark verbesserte, plastische Urzeit-Hütte mit Zustand & Verfall
@@ -1062,199 +1121,54 @@
       const cy = pos.y + TILE_H / 2 * zoom;
       ctx2.save();
       const species = a.species || "deer";
+      let glyph = "\u{1F98C}";
+      let baseFontSize = 24;
+      let shadowW = 8.5;
+      let shadowH = 3.6;
+      let badgeText = "\u{1F98C} Ur-Hirsch (5 Fleisch)";
+      let badgeColor = "#fed7aa";
       if (species === "bison") {
-        const shadowW = 12 * zoom;
-        const shadowH = 5.2 * zoom;
-        ctx2.beginPath();
-        ctx2.ellipse(cx, cy + 2 * zoom, shadowW, shadowH, 0, 0, Math.PI * 2);
-        ctx2.fillStyle = "rgba(0,0,0,0.36)";
-        ctx2.fill();
-        let hop = a.state === "fleeing" ? Math.abs(Math.sin(Date.now() * 0.015)) * 2.5 * zoom : 0;
-        const bodyY = cy - 8 * zoom - hop;
-        ctx2.fillStyle = "#1c1917";
-        ctx2.fillRect(cx - 7 * zoom, bodyY + 3 * zoom, 2.4 * zoom, 5 * zoom);
-        ctx2.fillRect(cx - 3 * zoom, bodyY + 3 * zoom, 2.4 * zoom, 5 * zoom);
-        ctx2.fillRect(cx + 3 * zoom, bodyY + 3 * zoom, 2.4 * zoom, 5 * zoom);
-        ctx2.fillRect(cx + 6 * zoom, bodyY + 3 * zoom, 2.4 * zoom, 5 * zoom);
-        ctx2.fillStyle = "#292524";
-        ctx2.beginPath();
-        ctx2.ellipse(cx - 3 * zoom, bodyY + 1 * zoom, 7.5 * zoom, 5.2 * zoom, 0, 0, Math.PI * 2);
-        ctx2.fill();
-        ctx2.fillStyle = "#1c1917";
-        ctx2.beginPath();
-        ctx2.ellipse(cx + 2.5 * zoom, bodyY - 3.5 * zoom, 7 * zoom, 6.2 * zoom, 0, 0, Math.PI * 2);
-        ctx2.fill();
-        ctx2.fillStyle = "#18110d";
-        ctx2.beginPath();
-        ctx2.ellipse(cx + 7.5 * zoom, bodyY + 0.5 * zoom, 3.8 * zoom, 4.2 * zoom, 0, 0, Math.PI * 2);
-        ctx2.fill();
-        ctx2.fillStyle = "#0f172a";
-        ctx2.beginPath();
-        ctx2.moveTo(cx + 6 * zoom, bodyY + 3 * zoom);
-        ctx2.lineTo(cx + 8.5 * zoom, bodyY + 3 * zoom);
-        ctx2.lineTo(cx + 7.5 * zoom, bodyY + 7 * zoom);
-        ctx2.closePath();
-        ctx2.fill();
-        ctx2.strokeStyle = "#f8fafc";
-        ctx2.lineWidth = 2.2 * zoom;
-        ctx2.beginPath();
-        ctx2.moveTo(cx + 6.5 * zoom, bodyY - 2 * zoom);
-        ctx2.quadraticCurveTo(cx + 8.5 * zoom, bodyY - 8 * zoom, cx + 5.5 * zoom, bodyY - 9 * zoom);
-        ctx2.moveTo(cx + 8.5 * zoom, bodyY - 2 * zoom);
-        ctx2.quadraticCurveTo(cx + 10.5 * zoom, bodyY - 8 * zoom, cx + 8 * zoom, bodyY - 9.5 * zoom);
-        ctx2.stroke();
-        ctx2.strokeStyle = "#0f172a";
-        ctx2.lineWidth = 2 * zoom;
-        ctx2.beginPath();
-        ctx2.moveTo(cx + 6 * zoom, bodyY - 8.2 * zoom);
-        ctx2.lineTo(cx + 5.5 * zoom, bodyY - 9 * zoom);
-        ctx2.moveTo(cx + 8.5 * zoom, bodyY - 8.8 * zoom);
-        ctx2.lineTo(cx + 8 * zoom, bodyY - 9.5 * zoom);
-        ctx2.stroke();
-        ctx2.font = `bold ${Math.max(9, 9 * zoom)}px sans-serif`;
-        ctx2.textAlign = "center";
-        ctx2.fillStyle = "#fef08a";
-        ctx2.fillText(`\u{1F9AC} Ur-Bison (15 Fleisch)`, cx, bodyY - 12 * zoom);
+        glyph = "\u{1F9AC}";
+        baseFontSize = 32;
+        shadowW = 13;
+        shadowH = 5.6;
+        badgeText = "\u{1F9AC} Ur-Bison (15 Fleisch)";
+        badgeColor = "#fef08a";
       } else if (species === "boar") {
-        const shadowW = 7.5 * zoom;
-        const shadowH = 3.4 * zoom;
-        ctx2.beginPath();
-        ctx2.ellipse(cx, cy + 2 * zoom, shadowW, shadowH, 0, 0, Math.PI * 2);
-        ctx2.fillStyle = "rgba(0,0,0,0.30)";
-        ctx2.fill();
-        let hop = a.state === "fleeing" ? Math.abs(Math.sin(Date.now() * 0.022)) * 3 * zoom : 0;
-        const bodyY = cy - 5.5 * zoom - hop;
-        ctx2.fillStyle = "#1c1917";
-        ctx2.fillRect(cx - 4.5 * zoom, bodyY + 2.5 * zoom, 1.8 * zoom, 4 * zoom);
-        ctx2.fillRect(cx - 1.5 * zoom, bodyY + 2.5 * zoom, 1.8 * zoom, 4 * zoom);
-        ctx2.fillRect(cx + 2.5 * zoom, bodyY + 2.5 * zoom, 1.8 * zoom, 4 * zoom);
-        ctx2.fillRect(cx + 5 * zoom, bodyY + 2.5 * zoom, 1.8 * zoom, 4 * zoom);
-        ctx2.fillStyle = "#3a2318";
-        ctx2.beginPath();
-        ctx2.ellipse(cx, bodyY, 6.8 * zoom, 4.4 * zoom, 0, 0, Math.PI * 2);
-        ctx2.fill();
-        ctx2.fillStyle = "#1c110a";
-        ctx2.beginPath();
-        ctx2.ellipse(cx - 1 * zoom, bodyY - 3.2 * zoom, 5.5 * zoom, 1.8 * zoom, 0, 0, Math.PI * 2);
-        ctx2.fill();
-        ctx2.fillStyle = "#2f1a11";
-        ctx2.beginPath();
-        ctx2.moveTo(cx + 2 * zoom, bodyY + 1.5 * zoom);
-        ctx2.lineTo(cx + 8.5 * zoom, bodyY + 1.8 * zoom);
-        ctx2.lineTo(cx + 4 * zoom, bodyY - 3.5 * zoom);
-        ctx2.closePath();
-        ctx2.fill();
-        ctx2.fillStyle = "#fb923c";
-        ctx2.beginPath();
-        ctx2.ellipse(cx + 8.2 * zoom, bodyY + 1.8 * zoom, 1.2 * zoom, 1.8 * zoom, 0, 0, Math.PI * 2);
-        ctx2.fill();
-        ctx2.strokeStyle = "#ffffff";
-        ctx2.lineWidth = 1.8 * zoom;
-        ctx2.beginPath();
-        ctx2.moveTo(cx + 6.8 * zoom, bodyY + 2.2 * zoom);
-        ctx2.lineTo(cx + 7.8 * zoom, bodyY - 1.5 * zoom);
-        ctx2.moveTo(cx + 5.5 * zoom, bodyY + 2 * zoom);
-        ctx2.lineTo(cx + 6.2 * zoom, bodyY - 1.2 * zoom);
-        ctx2.stroke();
-        ctx2.font = `bold ${Math.max(9, 9 * zoom)}px sans-serif`;
-        ctx2.textAlign = "center";
-        ctx2.fillStyle = "#fed7aa";
-        ctx2.fillText(`\u{1F417} Wildschwein (7 Fleisch)`, cx, bodyY - 9 * zoom);
+        glyph = "\u{1F417}";
+        baseFontSize = 23;
+        shadowW = 9;
+        shadowH = 4.2;
+        badgeText = "\u{1F417} Wildschwein (7 Fleisch)";
+        badgeColor = "#fed7aa";
       } else if (species === "hare") {
-        const shadowW = 3.6 * zoom;
-        const shadowH = 1.8 * zoom;
-        ctx2.beginPath();
-        ctx2.ellipse(cx, cy + 1 * zoom, shadowW, shadowH, 0, 0, Math.PI * 2);
-        ctx2.fillStyle = "rgba(0,0,0,0.22)";
-        ctx2.fill();
-        let hop = a.state === "fleeing" || a.state === "moving" ? Math.abs(Math.sin(Date.now() * 0.028)) * 6.5 * zoom : 0;
-        const bodyY = cy - 3.5 * zoom - hop;
-        ctx2.fillStyle = "#d97706";
-        ctx2.beginPath();
-        ctx2.ellipse(cx, bodyY, 3.6 * zoom, 2.5 * zoom, 0, 0, Math.PI * 2);
-        ctx2.fill();
-        ctx2.fillStyle = "#fef3c7";
-        ctx2.beginPath();
-        ctx2.ellipse(cx + 0.5 * zoom, bodyY + 1 * zoom, 2.4 * zoom, 1.2 * zoom, 0, 0, Math.PI * 2);
-        ctx2.fill();
-        ctx2.fillStyle = "#ffffff";
-        ctx2.beginPath();
-        ctx2.arc(cx - 3.6 * zoom, bodyY - 0.5 * zoom, 1.2 * zoom, 0, Math.PI * 2);
-        ctx2.fill();
-        ctx2.fillStyle = "#b45309";
-        ctx2.beginPath();
-        ctx2.arc(cx + 2.8 * zoom, bodyY - 2 * zoom, 1.9 * zoom, 0, Math.PI * 2);
-        ctx2.fill();
-        ctx2.fillStyle = "#b45309";
-        ctx2.strokeStyle = "#92400e";
-        ctx2.lineWidth = 1.5 * zoom;
-        ctx2.beginPath();
-        ctx2.moveTo(cx + 2 * zoom, bodyY - 3.2 * zoom);
-        ctx2.lineTo(cx + 1.2 * zoom, bodyY - 8.5 * zoom);
-        ctx2.moveTo(cx + 3.4 * zoom, bodyY - 3.2 * zoom);
-        ctx2.lineTo(cx + 3.8 * zoom, bodyY - 8.8 * zoom);
-        ctx2.stroke();
-        ctx2.strokeStyle = "#1e293b";
-        ctx2.lineWidth = 1.6 * zoom;
-        ctx2.beginPath();
-        ctx2.moveTo(cx + 1.4 * zoom, bodyY - 7.5 * zoom);
-        ctx2.lineTo(cx + 1.2 * zoom, bodyY - 8.5 * zoom);
-        ctx2.moveTo(cx + 3.7 * zoom, bodyY - 7.8 * zoom);
-        ctx2.lineTo(cx + 3.8 * zoom, bodyY - 8.8 * zoom);
-        ctx2.stroke();
-        ctx2.font = `bold ${Math.max(9, 9 * zoom)}px sans-serif`;
-        ctx2.textAlign = "center";
-        ctx2.fillStyle = "#fef08a";
-        ctx2.fillText(`\u{1F407} Feldhase (2 Fleisch)`, cx, bodyY - 11 * zoom);
-      } else {
-        const shadowW = 7 * zoom;
-        const shadowH = 3.2 * zoom;
-        ctx2.beginPath();
-        ctx2.ellipse(cx, cy + 2 * zoom, shadowW, shadowH, 0, 0, Math.PI * 2);
-        ctx2.fillStyle = "rgba(0,0,0,0.28)";
-        ctx2.fill();
-        let hop = a.state === "fleeing" ? Math.abs(Math.sin(Date.now() * 0.02)) * 4.5 * zoom : 0;
-        const bodyY = cy - 7 * zoom - hop;
-        ctx2.fillStyle = "#78350f";
-        ctx2.fillRect(cx - 4.5 * zoom, bodyY + 2.5 * zoom, 1.4 * zoom, 6 * zoom);
-        ctx2.fillRect(cx - 2 * zoom, bodyY + 2.5 * zoom, 1.4 * zoom, 6 * zoom);
-        ctx2.fillRect(cx + 2 * zoom, bodyY + 2.5 * zoom, 1.4 * zoom, 6 * zoom);
-        ctx2.fillRect(cx + 4.5 * zoom, bodyY + 2.5 * zoom, 1.4 * zoom, 6 * zoom);
-        ctx2.fillStyle = "#b45309";
-        ctx2.beginPath();
-        ctx2.ellipse(cx, bodyY, 6.2 * zoom, 3.6 * zoom, 0, 0, Math.PI * 2);
-        ctx2.fill();
-        ctx2.fillStyle = "#9a3412";
-        ctx2.beginPath();
-        ctx2.moveTo(cx + 2.5 * zoom, bodyY);
-        ctx2.lineTo(cx + 6.8 * zoom, bodyY - 6.5 * zoom);
-        ctx2.lineTo(cx + 4.2 * zoom, bodyY - 6.5 * zoom);
-        ctx2.closePath();
-        ctx2.fill();
-        ctx2.beginPath();
-        ctx2.arc(cx + 6.5 * zoom, bodyY - 7 * zoom, 2.4 * zoom, 0, Math.PI * 2);
-        ctx2.fill();
-        ctx2.strokeStyle = "#451a03";
-        ctx2.lineWidth = 1.4 * zoom;
-        ctx2.beginPath();
-        ctx2.moveTo(cx + 6 * zoom, bodyY - 9 * zoom);
-        ctx2.lineTo(cx + 4.5 * zoom, bodyY - 14 * zoom);
-        ctx2.moveTo(cx + 7.2 * zoom, bodyY - 9 * zoom);
-        ctx2.lineTo(cx + 9.5 * zoom, bodyY - 14.5 * zoom);
-        ctx2.moveTo(cx + 5.5 * zoom, bodyY - 11 * zoom);
-        ctx2.lineTo(cx + 3.2 * zoom, bodyY - 12.5 * zoom);
-        ctx2.moveTo(cx + 4.8 * zoom, bodyY - 13 * zoom);
-        ctx2.lineTo(cx + 3 * zoom, bodyY - 15 * zoom);
-        ctx2.moveTo(cx + 8 * zoom, bodyY - 11 * zoom);
-        ctx2.lineTo(cx + 10.5 * zoom, bodyY - 12.5 * zoom);
-        ctx2.moveTo(cx + 9 * zoom, bodyY - 13 * zoom);
-        ctx2.lineTo(cx + 11.2 * zoom, bodyY - 15 * zoom);
-        ctx2.stroke();
-        ctx2.font = `bold ${Math.max(9, 9 * zoom)}px sans-serif`;
-        ctx2.textAlign = "center";
-        ctx2.fillStyle = "#fed7aa";
-        ctx2.fillText(`\u{1F98C} Ur-Hirsch (5 Fleisch)`, cx, bodyY - 16 * zoom);
+        glyph = "\u{1F407}";
+        baseFontSize = 16;
+        shadowW = 5;
+        shadowH = 2.4;
+        badgeText = "\u{1F407} Feldhase (2 Fleisch)";
+        badgeColor = "#e2e8f0";
       }
+      const isFleeing = a.state === "fleeing";
+      const animSpeed = isFleeing ? 0.024 : 6e-3;
+      const stepHop = a.state === "fleeing" || a.state === "moving" ? Math.abs(Math.sin(Date.now() * animSpeed)) * (species === "hare" ? 4.5 : 2.5) * zoom : Math.sin(Date.now() * 3e-3) * 0.8 * zoom;
+      ctx2.beginPath();
+      ctx2.ellipse(cx, cy + 2 * zoom, shadowW * zoom, shadowH * zoom, 0, 0, Math.PI * 2);
+      ctx2.fillStyle = isFleeing ? "rgba(0,0,0,0.22)" : "rgba(0,0,0,0.34)";
+      ctx2.fill();
+      const glyphY = cy - baseFontSize * 0.35 * zoom - stepHop;
+      const fontSize = Math.round(baseFontSize * zoom);
+      ctx2.font = `${fontSize}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
+      ctx2.textAlign = "center";
+      ctx2.textBaseline = "middle";
+      ctx2.shadowColor = "rgba(0,0,0,0.45)";
+      ctx2.shadowBlur = 4 * zoom;
+      ctx2.shadowOffsetY = 2 * zoom;
+      ctx2.fillText(glyph, cx, glyphY);
+      ctx2.font = `bold ${Math.max(9, 9 * zoom)}px sans-serif`;
+      ctx2.textAlign = "center";
+      ctx2.fillStyle = badgeColor;
+      ctx2.fillText(badgeText, cx, glyphY - baseFontSize * 0.58 * zoom);
       ctx2.restore();
     }
     drawHuman(h, selectedHumanId2) {
@@ -1281,7 +1195,8 @@
         ctx2.stroke();
       }
       let bobbing = 0;
-      if (h.state === "moving") {
+      const isMoving = h.state === "moving";
+      if (isMoving) {
         bobbing = Math.abs(Math.sin(Date.now() * 0.012)) * (isBaby ? 1.4 : 2.8) * zoom;
       } else if (h.state === "playing") {
         bobbing = Math.abs(Math.sin(Date.now() * 0.018)) * 3.6 * zoom;
@@ -1299,19 +1214,81 @@
         ctx2.restore();
         return;
       }
-      ctx2.fillStyle = h.tint;
+      if (!isSittingAtFire) {
+        const legStride = isMoving ? Math.sin(Date.now() * 0.015) * 3.5 * scale * zoom : 0;
+        ctx2.fillStyle = h.tint === "#3b82f6" ? "#b45309" : "#92400e";
+        ctx2.fillRect(cx - 2.5 * scale * zoom, bodyY + 5 * scale * zoom, 1.8 * scale * zoom, 4 * scale * zoom + legStride);
+        ctx2.fillRect(cx + 0.8 * scale * zoom, bodyY + 5 * scale * zoom, 1.8 * scale * zoom, 4 * scale * zoom - legStride);
+      }
+      ctx2.fillStyle = "#5c2e0b";
       ctx2.beginPath();
-      ctx2.arc(cx, bodyY, 4.5 * scale * zoom, 0, Math.PI * 2);
+      ctx2.moveTo(cx - 3.8 * scale * zoom, bodyY);
+      ctx2.lineTo(cx + 3.8 * scale * zoom, bodyY);
+      ctx2.lineTo(cx + 4.2 * scale * zoom, bodyY + 6.5 * scale * zoom);
+      ctx2.lineTo(cx - 4.2 * scale * zoom, bodyY + 6.5 * scale * zoom);
+      ctx2.closePath();
       ctx2.fill();
-      ctx2.fillRect(cx - 3.5 * scale * zoom, bodyY, 7 * scale * zoom, 7 * scale * zoom);
+      ctx2.strokeStyle = "#1c1917";
+      ctx2.lineWidth = 1 * zoom * scale;
+      ctx2.beginPath();
+      ctx2.moveTo(cx - 4.2 * scale * zoom, bodyY + 4 * scale * zoom);
+      ctx2.lineTo(cx + 4.2 * scale * zoom, bodyY + 4 * scale * zoom);
+      ctx2.stroke();
+      ctx2.fillStyle = h.tint === "#3b82f6" ? "#b45309" : "#92400e";
+      ctx2.fillRect(cx - 4.8 * scale * zoom, bodyY + 1 * scale * zoom, 1.6 * scale * zoom, 4 * scale * zoom);
+      ctx2.fillRect(cx + 3.4 * scale * zoom, bodyY + 1 * scale * zoom, 1.6 * scale * zoom, 4 * scale * zoom);
+      if (h.state === "hunting") {
+        ctx2.strokeStyle = "#a16207";
+        ctx2.lineWidth = 1.4 * zoom;
+        ctx2.beginPath();
+        ctx2.moveTo(cx + 4 * scale * zoom, bodyY - 6 * scale * zoom);
+        ctx2.lineTo(cx + 4 * scale * zoom, bodyY + 8 * scale * zoom);
+        ctx2.stroke();
+      } else if (h.state === "chopping" || h.state === "mining") {
+        ctx2.fillStyle = "#475569";
+        ctx2.beginPath();
+        ctx2.arc(cx + 4.5 * scale * zoom, bodyY + 4.5 * scale * zoom, 1.8 * scale * zoom, 0, Math.PI * 2);
+        ctx2.fill();
+      } else if (h.state === "digging" || h.state === "foraging") {
+        ctx2.strokeStyle = "#854d0e";
+        ctx2.lineWidth = 1.3 * zoom;
+        ctx2.beginPath();
+        ctx2.moveTo(cx + 4.5 * scale * zoom, bodyY + 1 * scale * zoom);
+        ctx2.lineTo(cx + 6 * scale * zoom, bodyY + 8 * scale * zoom);
+        ctx2.stroke();
+      }
+      if (h.gender === "f" && !isBaby && (h.state === "resting" || h.state === "socializing")) {
+        ctx2.fillStyle = "#fed7aa";
+        ctx2.beginPath();
+        ctx2.arc(cx - 3.5 * scale * zoom, bodyY - 1 * scale * zoom, 1.8 * scale * zoom, 0, Math.PI * 2);
+        ctx2.fill();
+      }
       ctx2.fillStyle = h.ageYears > 50 ? "#cbd5e1" : "#fed7aa";
       ctx2.beginPath();
       ctx2.arc(cx, bodyY - 6 * scale * zoom, 3.2 * scale * zoom, 0, Math.PI * 2);
       ctx2.fill();
-      ctx2.fillStyle = h.ageYears > 50 ? "#94a3b8" : "#3c2415";
+      const hairColor = h.ageYears > 50 ? "#94a3b8" : h.gender === "m" ? "#1c1917" : "#291b12";
+      ctx2.fillStyle = hairColor;
       ctx2.beginPath();
-      ctx2.arc(cx, bodyY - 7.5 * scale * zoom, 2.6 * scale * zoom, Math.PI, Math.PI * 2);
+      ctx2.arc(cx, bodyY - 7.5 * scale * zoom, 2.8 * scale * zoom, Math.PI, Math.PI * 2);
       ctx2.fill();
+      if (h.gender === "f" && !isBaby) {
+        ctx2.fillStyle = hairColor;
+        ctx2.fillRect(cx - 3.2 * scale * zoom, bodyY - 7 * scale * zoom, 1.4 * scale * zoom, 4.5 * scale * zoom);
+        ctx2.fillRect(cx + 1.8 * scale * zoom, bodyY - 7 * scale * zoom, 1.4 * scale * zoom, 4.5 * scale * zoom);
+      }
+      if (h.gender === "m" && !isChild && !isBaby) {
+        ctx2.fillStyle = hairColor;
+        ctx2.beginPath();
+        ctx2.arc(cx, bodyY - 4.5 * scale * zoom, 1.6 * scale * zoom, 0, Math.PI);
+        ctx2.fill();
+      }
+      if (h.id === selectedHumanId2) {
+        ctx2.font = `bold ${Math.max(9, 9 * zoom)}px sans-serif`;
+        ctx2.textAlign = "center";
+        ctx2.fillStyle = "#fbbf24";
+        ctx2.fillText(`${h.name} (${Math.floor(h.ageYears)}J)`, cx, bodyY - 17 * scale * zoom);
+      }
       if (h.state === "socializing") {
         ctx2.font = `${8 * zoom}px sans-serif`;
         ctx2.textAlign = "center";
@@ -1352,7 +1329,7 @@
       if (icon) {
         ctx2.font = `${Math.max(10, 11 * zoom)}px sans-serif`;
         ctx2.textAlign = "center";
-        ctx2.fillText(icon, cx, bodyY - 14 * zoom);
+        ctx2.fillText(icon, cx, bodyY - 13 * zoom);
       }
       ctx2.restore();
     }
@@ -2961,19 +2938,19 @@
     let fireScore = 0;
     const currentFire = fireState2 && typeof fireState2.intensity === "number" ? fireState2.intensity : 100;
     if (currentFire <= 0) {
-      fireScore = 25;
-    } else if (currentFire < 35) {
-      fireScore = Math.round((35 - currentFire) / 35 * 25);
+      fireScore = 30;
+    } else if (currentFire < 40) {
+      fireScore = Math.round((40 - currentFire) / 40 * 30);
     }
-    const hungryCount = livingHumans.filter((h) => h.needs.food < 40).length;
-    const starvingCount = livingHumans.filter((h) => h.needs.food < 20).length;
+    const hungryCount = livingHumans.filter((h) => h.needs.food < 45).length;
+    const starvingCount = livingHumans.filter((h) => h.needs.food < 25).length;
     const hungerSeverity = (hungryCount * 0.5 + starvingCount * 0.5) / livingHumans.length;
     const hungerScore = Math.min(35, Math.round(hungerSeverity * 35));
     let stockScore = 0;
-    if (campfireStock2.food === 0) stockScore += 12;
-    else if (campfireStock2.food <= 1) stockScore += 6;
-    if (campfireStock2.wood === 0) stockScore += 8;
-    else if (campfireStock2.wood <= 1) stockScore += 4;
+    if (campfireStock2.wood === 0) stockScore += 12;
+    else if (campfireStock2.wood <= 1) stockScore += 6;
+    if (campfireStock2.food === 0) stockScore += 13;
+    else if (campfireStock2.food <= 2) stockScore += 6;
     let localBerries = 0;
     let localTrees = 0;
     let localFish = 0;
@@ -2981,7 +2958,7 @@
     for (let y = 0; y < MAP_SIZE; y++) {
       for (let x = 0; x < MAP_SIZE; x++) {
         const dist = Math.hypot(x - CAMP_CENTER.x, y - CAMP_CENTER.y);
-        if (dist <= 6.5) {
+        if (dist <= 7) {
           const t = map2[y][x];
           if (t.plant) {
             if (t.plant.type === "bush" && !t.plant.isRootstock) {
@@ -2999,20 +2976,24 @@
         }
       }
     }
-    let localDepletionScore = 0;
-    if (localBerries === 0) localDepletionScore += 7;
-    else if (localBerries <= 2) localDepletionScore += 3;
-    if (localTrees === 0) localDepletionScore += 7;
-    else if (localTrees <= 2) localDepletionScore += 3;
-    if (localFish === 0) localDepletionScore += 6;
-    else if (localFish <= 2) localDepletionScore += 2;
-    if (localShelters === 0 && currentFire < 20) {
-      localDepletionScore = Math.min(20, localDepletionScore + 5);
+    let shelterScore = 0;
+    if (localShelters === 0) {
+      shelterScore = 20;
+    } else if (localShelters === 1) {
+      shelterScore = 8;
     }
-    const totalPressure = Math.min(100, fireScore + hungerScore + stockScore + localDepletionScore);
+    let localDepletionScore = 0;
+    if (localTrees === 0) localDepletionScore += 10;
+    else if (localTrees <= 2) localDepletionScore += 5;
+    if (localBerries === 0) localDepletionScore += 8;
+    else if (localBerries <= 2) localDepletionScore += 4;
+    if (localFish === 0) localDepletionScore += 7;
+    else if (localFish <= 2) localDepletionScore += 3;
+    const totalPressure = Math.min(100, fireScore + shelterScore + stockScore + localDepletionScore + hungerScore);
     migrationState.pressure = totalPressure;
     migrationState.pressureDetails = {
       fire: fireScore,
+      shelter: shelterScore,
       hunger: hungerScore,
       stock: stockScore,
       localDepletion: localDepletionScore,

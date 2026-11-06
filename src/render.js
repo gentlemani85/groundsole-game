@@ -72,7 +72,7 @@ export class Renderer {
     for (const item of depthItems) {
       if (item.type === 'rock') {
         const pos = this.cam.gridToScreen(item.x, item.y);
-        this.drawNaturalRock(pos.x, pos.y + (TILE_H / 2) * this.cam.zoom);
+        this.drawNaturalRock(pos.x, pos.y + (TILE_H / 2) * this.cam.zoom, item.x, item.y);
       } else if (item.type === 'shelter') {
         const pos = this.cam.gridToScreen(item.x, item.y);
         this.drawPrimitiveShelter(pos.x, pos.y + (TILE_H / 2) * this.cam.zoom, item.shelter);
@@ -266,6 +266,7 @@ export class Renderer {
     const ctx = this.ctx;
     const zoom = this.cam.zoom;
     const s = plant.stage;
+    const seed = plant.seedVariance || 0.5;
 
     ctx.save();
 
@@ -290,36 +291,44 @@ export class Renderer {
       return;
     }
 
-    const baseR = (3.2 + s * 2.8) * zoom;
+    // Variierende Busch-Ausdehnung & Schattierung je nach Seed
+    const varFactor = 0.85 + seed * 0.3;
+    const baseR = (3.2 + s * 2.8) * varFactor * zoom;
 
     ctx.beginPath();
     ctx.ellipse(cx, cy + 2 * zoom, baseR * 1.2, baseR * 0.55, 0, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(0,0,0,0.25)';
     ctx.fill();
 
-    const foliageDark = '#1f3e17';
-    const foliageMid = '#2d5521';
-    const foliageLight = '#427532';
+    // Biom-Nuancen im Buschlaub
+    let foliageDark = '#1f3e17';
+    let foliageMid = '#2d5521';
+    let foliageLight = '#427532';
+    if (this.biomeId === 'steppe') {
+      foliageDark = '#2e381b';
+      foliageMid = '#4a572a';
+      foliageLight = '#6b7b3b';
+    }
 
     ctx.fillStyle = foliageDark;
     ctx.beginPath();
-    ctx.arc(cx - 2 * zoom, cy - baseR + 2 * zoom, baseR * 0.85, 0, Math.PI * 2);
-    ctx.arc(cx + 2.5 * zoom, cy - baseR + 1 * zoom, baseR * 0.85, 0, Math.PI * 2);
+    ctx.arc(cx - (2 + seed) * zoom, cy - baseR + 2 * zoom, baseR * 0.85, 0, Math.PI * 2);
+    ctx.arc(cx + (2.5 - seed) * zoom, cy - baseR + 1 * zoom, baseR * 0.85, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.fillStyle = foliageMid;
     ctx.beginPath();
     ctx.arc(cx, cy - baseR - 1 * zoom, baseR * 0.75, 0, Math.PI * 2);
-    ctx.arc(cx - 3 * zoom, cy - baseR - 3 * zoom, baseR * 0.55, 0, Math.PI * 2);
+    ctx.arc(cx - 3 * zoom, cy - baseR - (2 + seed * 2) * zoom, baseR * 0.55, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.fillStyle = foliageLight;
     ctx.beginPath();
-    ctx.arc(cx - 1 * zoom, cy - baseR - 4 * zoom, baseR * 0.45, 0, Math.PI * 2);
+    ctx.arc(cx - (0.5 + seed) * zoom, cy - baseR - 4 * zoom, baseR * 0.45, 0, Math.PI * 2);
     ctx.fill();
 
     if (plant.berries > 0 && s >= 2) {
-      ctx.fillStyle = '#dc2626';
+      ctx.fillStyle = (this.biomeId === 'steppe') ? '#f97316' : '#dc2626';
       const berryR = 1.6 * zoom;
 
       ctx.beginPath();
@@ -328,12 +337,6 @@ export class Renderer {
       if (plant.berries >= 3) ctx.arc(cx, cy - baseR - 6 * zoom, berryR, 0, Math.PI * 2);
       if (plant.berries >= 4) ctx.arc(cx - 2 * zoom, cy - baseR - 4 * zoom, berryR, 0, Math.PI * 2);
       if (plant.berries >= 5) ctx.arc(cx + 2 * zoom, cy - baseR - 5 * zoom, berryR, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = '#fca5a5';
-      ctx.beginPath();
-      if (plant.berries >= 1) ctx.arc(cx - 3.4 * zoom, cy - baseR + 0.6 * zoom, 0.5 * zoom, 0, Math.PI * 2);
-      if (plant.berries >= 2) ctx.arc(cx + 2.6 * zoom, cy - baseR - 2.4 * zoom, 0.5 * zoom, 0, Math.PI * 2);
       ctx.fill();
     }
 
@@ -344,26 +347,34 @@ export class Renderer {
     const ctx = this.ctx;
     const zoom = this.cam.zoom;
     const s = plant.stage;
+    const seed = plant.seedVariance || 0.5;
 
     ctx.save();
-    const trunkH = (8 + s * 9) * zoom;
+    // 3 Wuchsformen nach Seed:
+    // Typ 1: Ausladende Fluss-Eiche (breiter, niedriger)
+    // Typ 2: Schlanke Steppen-Kiefer (hoher Stamm, konische Krone)
+    // Typ 3: Runder Urwald-Laubbaum
+    const isPine = (seed >= 0.35 && seed < 0.70);
+    const isOak = (seed < 0.35);
+
+    const trunkH = ((isPine ? 11 : (isOak ? 7 : 8)) + s * 9) * zoom;
     const trunkW = (2 + s * 1.5) * zoom;
-    const crownR = (5.5 + s * 5.5) * zoom;
+    const crownR = ((isOak ? 6.5 : (isPine ? 4.8 : 5.5)) + s * 5.5) * zoom;
+    const lean = (seed - 0.5) * 5 * zoom; // Natürliche Stammneigung
 
     ctx.beginPath();
     ctx.ellipse(cx + 2 * zoom, cy + 2 * zoom, crownR * 1.15, crownR * 0.5, -0.2, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(0,0,0,0.28)';
     ctx.fill();
 
+    // Stamm mit Neigung
     ctx.fillStyle = '#422815';
     ctx.beginPath();
     ctx.moveTo(cx - trunkW, cy);
-    ctx.lineTo(cx - trunkW * 0.6, cy - trunkH + 4 * zoom);
-    ctx.lineTo(cx - crownR * 0.5, cy - trunkH);
-    ctx.lineTo(cx - crownR * 0.3, cy - trunkH + 2 * zoom);
-    ctx.lineTo(cx + trunkW * 0.5, cy - trunkH + 5 * zoom);
-    ctx.lineTo(cx + crownR * 0.4, cy - trunkH + 1 * zoom);
-    ctx.lineTo(cx + trunkW * 0.6, cy - trunkH + 8 * zoom);
+    ctx.lineTo(cx + lean - trunkW * 0.6, cy - trunkH + 4 * zoom);
+    ctx.lineTo(cx + lean - crownR * 0.4, cy - trunkH);
+    ctx.lineTo(cx + lean + crownR * 0.3, cy - trunkH + 2 * zoom);
+    ctx.lineTo(cx + lean + trunkW * 0.6, cy - trunkH + 8 * zoom);
     ctx.lineTo(cx + trunkW, cy);
     ctx.closePath();
     ctx.fill();
@@ -372,80 +383,129 @@ export class Renderer {
     ctx.lineWidth = 0.8 * zoom;
     ctx.stroke();
 
-    const crownY = cy - trunkH - crownR * 0.4;
+    const crownX = cx + lean;
+    const crownY = cy - trunkH - crownR * 0.35;
 
-    ctx.fillStyle = '#142e0f';
-    ctx.beginPath();
-    ctx.arc(cx - crownR * 0.4, crownY + crownR * 0.2, crownR * 0.65, 0, Math.PI * 2);
-    ctx.arc(cx + crownR * 0.4, crownY + crownR * 0.2, crownR * 0.7, 0, Math.PI * 2);
-    ctx.fill();
+    if (isPine) {
+      // Schlanke Kiefern-/Nadelbaum-Form (etagenförmig)
+      ctx.fillStyle = '#102a16';
+      ctx.beginPath();
+      ctx.moveTo(crownX, crownY - crownR * 1.1);
+      ctx.lineTo(crownX + crownR * 0.8, crownY + crownR * 0.5);
+      ctx.lineTo(crownX - crownR * 0.8, crownY + crownR * 0.5);
+      ctx.closePath();
+      ctx.fill();
 
-    ctx.fillStyle = '#1e4417';
-    ctx.beginPath();
-    ctx.arc(cx, crownY, crownR * 0.85, 0, Math.PI * 2);
-    ctx.arc(cx - crownR * 0.35, crownY - crownR * 0.25, crownR * 0.6, 0, Math.PI * 2);
-    ctx.arc(cx + crownR * 0.3, crownY - crownR * 0.2, crownR * 0.65, 0, Math.PI * 2);
-    ctx.fill();
+      ctx.fillStyle = '#183c20';
+      ctx.beginPath();
+      ctx.moveTo(crownX, crownY - crownR * 0.9);
+      ctx.lineTo(crownX + crownR * 0.65, crownY + crownR * 0.1);
+      ctx.lineTo(crownX - crownR * 0.65, crownY + crownR * 0.1);
+      ctx.closePath();
+      ctx.fill();
 
-    ctx.fillStyle = '#316725';
-    ctx.beginPath();
-    ctx.arc(cx - crownR * 0.3, crownY - crownR * 0.45, crownR * 0.45, 0, Math.PI * 2);
-    ctx.arc(cx + crownR * 0.1, crownY - crownR * 0.4, crownR * 0.5, 0, Math.PI * 2);
-    ctx.fill();
+      ctx.fillStyle = '#265830';
+      ctx.beginPath();
+      ctx.moveTo(crownX, crownY - crownR * 0.7);
+      ctx.lineTo(crownX + crownR * 0.45, crownY - crownR * 0.2);
+      ctx.lineTo(crownX - crownR * 0.45, crownY - crownR * 0.2);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      // Laubbaum (Laubschichten mit sanftem Biom-Farbton)
+      const cDark = (this.biomeId === 'steppe') ? '#2e381b' : '#142e0f';
+      const cMid = (this.biomeId === 'steppe') ? '#445427' : '#1e4417';
+      const cLight = (this.biomeId === 'steppe') ? '#677d3b' : '#316725';
+
+      ctx.fillStyle = cDark;
+      ctx.beginPath();
+      ctx.arc(crownX - crownR * 0.45, crownY + crownR * 0.2, crownR * 0.65, 0, Math.PI * 2);
+      ctx.arc(crownX + crownR * 0.45, crownY + crownR * 0.2, crownR * 0.7, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = cMid;
+      ctx.beginPath();
+      ctx.arc(crownX, crownY, crownR * 0.85, 0, Math.PI * 2);
+      ctx.arc(crownX - crownR * 0.35, crownY - crownR * 0.25, crownR * 0.6, 0, Math.PI * 2);
+      ctx.arc(crownX + crownR * 0.3, crownY - crownR * 0.2, crownR * 0.65, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = cLight;
+      ctx.beginPath();
+      ctx.arc(crownX - crownR * 0.2, crownY - crownR * 0.45, crownR * 0.5, 0, Math.PI * 2);
+      ctx.arc(crownX + crownR * 0.2, crownY - crownR * 0.4, crownR * 0.45, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     ctx.restore();
   }
 
-  // Stark verbesserte, plastische Naturfels-Grafik (Mehrschichtige Facetten, Moos)
-  drawNaturalRock(cx, cy) {
+  // Stark verbesserte, plastische Naturfels-Grafik mit Koordinaten-Variation & Biom-Gestein
+  drawNaturalRock(cx, cy, gx = 0, gy = 0) {
     const ctx = this.ctx;
     const zoom = this.cam.zoom;
     ctx.save();
 
+    // Determinismus aus Kachelposition
+    const r = Math.abs(Math.sin(gx * 12.9898 + gy * 78.233));
+    const rScale = 0.85 + r * 0.3;
+    const w = 9 * rScale * zoom;
+    const h = 8 * rScale * zoom;
+
     // 1. Tiefenschatten
     ctx.beginPath();
-    ctx.ellipse(cx, cy + 3 * zoom, 11 * zoom, 5 * zoom, 0, 0, Math.PI * 2);
+    ctx.ellipse(cx, cy + 3 * zoom, (w + 2 * zoom), 5 * zoom, 0, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(0,0,0,0.32)';
     ctx.fill();
 
-    // 2. Dunkle Schattenkante hinten
-    ctx.fillStyle = '#2d333b';
+    // Farbpalette je nach Biom (Karst = Kalkstein, Steppe = Sandstein, Wald = Granit)
+    let cDark = '#2d333b', cMid = '#485260', cLight = '#738094';
+    if (this.biomeId === 'karst_canyon') {
+      cDark = '#333b47'; cMid = '#586578'; cLight = '#8e9eaf';
+    } else if (this.biomeId === 'steppe') {
+      cDark = '#362e24'; cMid = '#5c4e3e'; cLight = '#8c7b66';
+    }
+
+    // 2. Schattenfläche hinten
+    ctx.fillStyle = cDark;
     ctx.beginPath();
-    ctx.moveTo(cx - 9 * zoom, cy + 2 * zoom);
-    ctx.lineTo(cx - 6 * zoom, cy - 8 * zoom);
-    ctx.lineTo(cx + 2 * zoom, cy - 10 * zoom);
-    ctx.lineTo(cx + 9 * zoom, cy - 4 * zoom);
-    ctx.lineTo(cx + 8 * zoom, cy + 3 * zoom);
+    ctx.moveTo(cx - w, cy + 2 * zoom);
+    ctx.lineTo(cx - w * 0.6, cy - h);
+    ctx.lineTo(cx + w * 0.2, cy - h * 1.2);
+    ctx.lineTo(cx + w, cy - h * 0.4);
+    ctx.lineTo(cx + w * 0.9, cy + 3 * zoom);
     ctx.closePath();
     ctx.fill();
 
     // 3. Mittlere Felsfront
-    ctx.fillStyle = '#485260';
+    ctx.fillStyle = cMid;
     ctx.beginPath();
-    ctx.moveTo(cx - 9 * zoom, cy + 2 * zoom);
-    ctx.lineTo(cx - 2 * zoom, cy - 7 * zoom);
-    ctx.lineTo(cx + 4 * zoom, cy - 2 * zoom);
+    ctx.moveTo(cx - w, cy + 2 * zoom);
+    ctx.lineTo(cx - w * 0.2, cy - h * 0.8);
+    ctx.lineTo(cx + w * 0.4, cy - 2 * zoom);
     ctx.lineTo(cx - 1 * zoom, cy + 3 * zoom);
     ctx.closePath();
     ctx.fill();
 
-    // 4. Helle Lichtfläche oben
-    ctx.fillStyle = '#738094';
+    // 4. Helle Lichtfacette oben
+    ctx.fillStyle = cLight;
     ctx.beginPath();
-    ctx.moveTo(cx - 6 * zoom, cy - 8 * zoom);
-    ctx.lineTo(cx + 2 * zoom, cy - 10 * zoom);
-    ctx.lineTo(cx + 8 * zoom, cy - 5 * zoom);
-    ctx.lineTo(cx + 2 * zoom, cy - 4 * zoom);
-    ctx.lineTo(cx - 2 * zoom, cy - 7 * zoom);
+    ctx.moveTo(cx - w * 0.6, cy - h);
+    ctx.lineTo(cx + w * 0.2, cy - h * 1.2);
+    ctx.lineTo(cx + w * 0.9, cy - h * 0.5);
+    ctx.lineTo(cx + w * 0.2, cy - h * 0.4);
+    ctx.lineTo(cx - w * 0.2, cy - h * 0.8);
     ctx.closePath();
     ctx.fill();
 
-    // 5. Feiner Moosansatz am Felsfuß
-    ctx.fillStyle = '#3f6212';
-    ctx.beginPath();
-    ctx.arc(cx - 7 * zoom, cy + 1 * zoom, 2 * zoom, 0, Math.PI * 2);
-    ctx.arc(cx + 6 * zoom, cy + 2 * zoom, 2.2 * zoom, 0, Math.PI * 2);
-    ctx.fill();
+    // 5. Moosansatz am Felsfuß
+    if (this.biomeId !== 'steppe') {
+      ctx.fillStyle = '#3f6212';
+      ctx.beginPath();
+      ctx.arc(cx - w * 0.7, cy + 1 * zoom, 2 * zoom, 0, Math.PI * 2);
+      ctx.arc(cx + w * 0.6, cy + 2 * zoom, 2.2 * zoom, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     ctx.restore();
   }
@@ -714,285 +774,67 @@ export class Renderer {
     ctx.save();
     const species = a.species || 'deer';
 
+    let glyph = '🦌';
+    let baseFontSize = 24;
+    let shadowW = 8.5;
+    let shadowH = 3.6;
+    let badgeText = '🦌 Ur-Hirsch (5 Fleisch)';
+    let badgeColor = '#fed7aa';
+
     if (species === 'bison') {
-      // ==========================================
-      // 🦬 MÄCHTIGER UR-BISON (Bison priscus)
-      // Gewaltiger Rumpf, gewaltiger behaarter Schulterbuckel,
-      // tief hängender zotteliger Kopf mit Bart und zwei weit geschwungenen,
-      // weißen Hörnern mit schwarzen Spitzen!
-      // ==========================================
-      const shadowW = 12.0 * zoom;
-      const shadowH = 5.2 * zoom;
-      ctx.beginPath();
-      ctx.ellipse(cx, cy + 2 * zoom, shadowW, shadowH, 0, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(0,0,0,0.36)';
-      ctx.fill();
-
-      let hop = (a.state === 'fleeing') ? Math.abs(Math.sin(Date.now() * 0.015)) * 2.5 * zoom : 0;
-      const bodyY = cy - 8 * zoom - hop;
-
-      // 4 Beine mit Hufen
-      ctx.fillStyle = '#1c1917';
-      ctx.fillRect(cx - 7 * zoom, bodyY + 3 * zoom, 2.4 * zoom, 5 * zoom);
-      ctx.fillRect(cx - 3 * zoom, bodyY + 3 * zoom, 2.4 * zoom, 5 * zoom);
-      ctx.fillRect(cx + 3 * zoom, bodyY + 3 * zoom, 2.4 * zoom, 5 * zoom);
-      ctx.fillRect(cx + 6 * zoom, bodyY + 3 * zoom, 2.4 * zoom, 5 * zoom);
-
-      // Hinterer Körper (Hüfte & Flanke)
-      ctx.fillStyle = '#292524';
-      ctx.beginPath();
-      ctx.ellipse(cx - 3 * zoom, bodyY + 1 * zoom, 7.5 * zoom, 5.2 * zoom, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Riesiger Schulterbuckel & vordere Mähne
-      ctx.fillStyle = '#1c1917';
-      ctx.beginPath();
-      ctx.ellipse(cx + 2.5 * zoom, bodyY - 3.5 * zoom, 7.0 * zoom, 6.2 * zoom, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Tief gesenkter, zotteliger Kopf
-      ctx.fillStyle = '#18110d';
-      ctx.beginPath();
-      ctx.ellipse(cx + 7.5 * zoom, bodyY + 0.5 * zoom, 3.8 * zoom, 4.2 * zoom, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Kinnbart (Zotteln nach unten)
-      ctx.fillStyle = '#0f172a';
-      ctx.beginPath();
-      ctx.moveTo(cx + 6 * zoom, bodyY + 3 * zoom);
-      ctx.lineTo(cx + 8.5 * zoom, bodyY + 3 * zoom);
-      ctx.lineTo(cx + 7.5 * zoom, bodyY + 7 * zoom);
-      ctx.closePath();
-      ctx.fill();
-
-      // Zwei große, sichelförmig geschwungene weiße Hörner mit schwarzen Spitzen
-      ctx.strokeStyle = '#f8fafc';
-      ctx.lineWidth = 2.2 * zoom;
-      ctx.beginPath();
-      ctx.moveTo(cx + 6.5 * zoom, bodyY - 2 * zoom);
-      ctx.quadraticCurveTo(cx + 8.5 * zoom, bodyY - 8 * zoom, cx + 5.5 * zoom, bodyY - 9 * zoom);
-      ctx.moveTo(cx + 8.5 * zoom, bodyY - 2 * zoom);
-      ctx.quadraticCurveTo(cx + 10.5 * zoom, bodyY - 8 * zoom, cx + 8.0 * zoom, bodyY - 9.5 * zoom);
-      ctx.stroke();
-
-      // Schwarze Hornspitzen
-      ctx.strokeStyle = '#0f172a';
-      ctx.lineWidth = 2.0 * zoom;
-      ctx.beginPath();
-      ctx.moveTo(cx + 6.0 * zoom, bodyY - 8.2 * zoom);
-      ctx.lineTo(cx + 5.5 * zoom, bodyY - 9 * zoom);
-      ctx.moveTo(cx + 8.5 * zoom, bodyY - 8.8 * zoom);
-      ctx.lineTo(cx + 8.0 * zoom, bodyY - 9.5 * zoom);
-      ctx.stroke();
-
-      // Text-Badge über dem Tier
-      ctx.font = `bold ${Math.max(9, 9 * zoom)}px sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#fef08a';
-      ctx.fillText(`🦬 Ur-Bison (15 Fleisch)`, cx, bodyY - 12 * zoom);
-
+      glyph = '🦬';
+      baseFontSize = 32;
+      shadowW = 13.0;
+      shadowH = 5.6;
+      badgeText = '🦬 Ur-Bison (15 Fleisch)';
+      badgeColor = '#fef08a';
     } else if (species === 'boar') {
-      // ==========================================
-      // 🐗 WILDSCHWEIN (Sus scrofa)
-      // Stämmig, borstiger Rückenstrich, keilförmiger Kopf,
-      // rosa Rüsselteller und ZWEI PROMINENTE WEISSE HAUER!
-      // ==========================================
-      const shadowW = 7.5 * zoom;
-      const shadowH = 3.4 * zoom;
-      ctx.beginPath();
-      ctx.ellipse(cx, cy + 2 * zoom, shadowW, shadowH, 0, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(0,0,0,0.30)';
-      ctx.fill();
-
-      let hop = (a.state === 'fleeing') ? Math.abs(Math.sin(Date.now() * 0.022)) * 3 * zoom : 0;
-      const bodyY = cy - 5.5 * zoom - hop;
-
-      // 4 Beine
-      ctx.fillStyle = '#1c1917';
-      ctx.fillRect(cx - 4.5 * zoom, bodyY + 2.5 * zoom, 1.8 * zoom, 4 * zoom);
-      ctx.fillRect(cx - 1.5 * zoom, bodyY + 2.5 * zoom, 1.8 * zoom, 4 * zoom);
-      ctx.fillRect(cx + 2.5 * zoom, bodyY + 2.5 * zoom, 1.8 * zoom, 4 * zoom);
-      ctx.fillRect(cx + 5.0 * zoom, bodyY + 2.5 * zoom, 1.8 * zoom, 4 * zoom);
-
-      // Keilförmiger Rumpf
-      ctx.fillStyle = '#3a2318';
-      ctx.beginPath();
-      ctx.ellipse(cx, bodyY, 6.8 * zoom, 4.4 * zoom, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Dunkler Borstenkamm auf dem Rücken
-      ctx.fillStyle = '#1c110a';
-      ctx.beginPath();
-      ctx.ellipse(cx - 1 * zoom, bodyY - 3.2 * zoom, 5.5 * zoom, 1.8 * zoom, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Keilerkopf mit markantem Rüssel
-      ctx.fillStyle = '#2f1a11';
-      ctx.beginPath();
-      ctx.moveTo(cx + 2 * zoom, bodyY + 1.5 * zoom);
-      ctx.lineTo(cx + 8.5 * zoom, bodyY + 1.8 * zoom);
-      ctx.lineTo(cx + 4 * zoom, bodyY - 3.5 * zoom);
-      ctx.closePath();
-      ctx.fill();
-
-      // Rosafarbener / heller Rüsselteller
-      ctx.fillStyle = '#fb923c';
-      ctx.beginPath();
-      ctx.ellipse(cx + 8.2 * zoom, bodyY + 1.8 * zoom, 1.2 * zoom, 1.8 * zoom, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      // ZWEI SCHNEEWEEISSE HAUER (Stoßzähne), die markant nach oben aufgebogen sind!
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 1.8 * zoom;
-      ctx.beginPath();
-      ctx.moveTo(cx + 6.8 * zoom, bodyY + 2.2 * zoom);
-      ctx.lineTo(cx + 7.8 * zoom, bodyY - 1.5 * zoom);
-      ctx.moveTo(cx + 5.5 * zoom, bodyY + 2.0 * zoom);
-      ctx.lineTo(cx + 6.2 * zoom, bodyY - 1.2 * zoom);
-      ctx.stroke();
-
-      // Text-Badge über dem Tier
-      ctx.font = `bold ${Math.max(9, 9 * zoom)}px sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#fed7aa';
-      ctx.fillText(`🐗 Wildschwein (7 Fleisch)`, cx, bodyY - 9 * zoom);
-
+      glyph = '🐗';
+      baseFontSize = 23;
+      shadowW = 9.0;
+      shadowH = 4.2;
+      badgeText = '🐗 Wildschwein (7 Fleisch)';
+      badgeColor = '#fed7aa';
     } else if (species === 'hare') {
-      // ==========================================
-      // 🐇 FELDHASE (Lepus)
-      // Zierlicher hockender Körper, weite Hoppelsprünge,
-      // ZWEI SEHR LANGE AUFRECHTE LÖFFEL-OHREN mit dunklen Spitzen & weiße Blume!
-      // ==========================================
-      const shadowW = 3.6 * zoom;
-      const shadowH = 1.8 * zoom;
-      ctx.beginPath();
-      ctx.ellipse(cx, cy + 1 * zoom, shadowW, shadowH, 0, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(0,0,0,0.22)';
-      ctx.fill();
-
-      let hop = (a.state === 'fleeing' || a.state === 'moving') ? Math.abs(Math.sin(Date.now() * 0.028)) * 6.5 * zoom : 0;
-      const bodyY = cy - 3.5 * zoom - hop;
-
-      // Hockende Hinterläufe & Rumpf
-      ctx.fillStyle = '#d97706';
-      ctx.beginPath();
-      ctx.ellipse(cx, bodyY, 3.6 * zoom, 2.5 * zoom, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Helle Bauchunterseite
-      ctx.fillStyle = '#fef3c7';
-      ctx.beginPath();
-      ctx.ellipse(cx + 0.5 * zoom, bodyY + 1 * zoom, 2.4 * zoom, 1.2 * zoom, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Weißes Puschelschwänzchen (Blume)
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(cx - 3.6 * zoom, bodyY - 0.5 * zoom, 1.2 * zoom, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Hasenkopf
-      ctx.fillStyle = '#b45309';
-      ctx.beginPath();
-      ctx.arc(cx + 2.8 * zoom, bodyY - 2.0 * zoom, 1.9 * zoom, 0, Math.PI * 2);
-      ctx.fill();
-
-      // ZWEI SEHR LANGE LÖFFEL-OHREN (steil nach oben aufragend)
-      ctx.fillStyle = '#b45309';
-      ctx.strokeStyle = '#92400e';
-      ctx.lineWidth = 1.5 * zoom;
-      ctx.beginPath();
-      ctx.moveTo(cx + 2.0 * zoom, bodyY - 3.2 * zoom);
-      ctx.lineTo(cx + 1.2 * zoom, bodyY - 8.5 * zoom);
-      ctx.moveTo(cx + 3.4 * zoom, bodyY - 3.2 * zoom);
-      ctx.lineTo(cx + 3.8 * zoom, bodyY - 8.8 * zoom);
-      ctx.stroke();
-
-      // Schwarze Ohrspitzen
-      ctx.strokeStyle = '#1e293b';
-      ctx.lineWidth = 1.6 * zoom;
-      ctx.beginPath();
-      ctx.moveTo(cx + 1.4 * zoom, bodyY - 7.5 * zoom);
-      ctx.lineTo(cx + 1.2 * zoom, bodyY - 8.5 * zoom);
-      ctx.moveTo(cx + 3.7 * zoom, bodyY - 7.8 * zoom);
-      ctx.lineTo(cx + 3.8 * zoom, bodyY - 8.8 * zoom);
-      ctx.stroke();
-
-      // Text-Badge über dem Tier
-      ctx.font = `bold ${Math.max(9, 9 * zoom)}px sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#fef08a';
-      ctx.fillText(`🐇 Feldhase (2 Fleisch)`, cx, bodyY - 11 * zoom);
-
-    } else {
-      // ==========================================
-      // 🦌 UR-HIRSCH (Megaloceros)
-      // Hochbeinig, schlank, rotbraunes Fell,
-      // VIELENDIGES GROSSES KRONENGEWEIH mit vielen Sprossen!
-      // ==========================================
-      const shadowW = 7.0 * zoom;
-      const shadowH = 3.2 * zoom;
-      ctx.beginPath();
-      ctx.ellipse(cx, cy + 2 * zoom, shadowW, shadowH, 0, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(0,0,0,0.28)';
-      ctx.fill();
-
-      let hop = (a.state === 'fleeing') ? Math.abs(Math.sin(Date.now() * 0.02)) * 4.5 * zoom : 0;
-      const bodyY = cy - 7 * zoom - hop;
-
-      // 4 schlanke Beine
-      ctx.fillStyle = '#78350f';
-      ctx.fillRect(cx - 4.5 * zoom, bodyY + 2.5 * zoom, 1.4 * zoom, 6 * zoom);
-      ctx.fillRect(cx - 2.0 * zoom, bodyY + 2.5 * zoom, 1.4 * zoom, 6 * zoom);
-      ctx.fillRect(cx + 2.0 * zoom, bodyY + 2.5 * zoom, 1.4 * zoom, 6 * zoom);
-      ctx.fillRect(cx + 4.5 * zoom, bodyY + 2.5 * zoom, 1.4 * zoom, 6 * zoom);
-
-      // Schlanker Rumpf
-      ctx.fillStyle = '#b45309';
-      ctx.beginPath();
-      ctx.ellipse(cx, bodyY, 6.2 * zoom, 3.6 * zoom, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Hals nach oben
-      ctx.fillStyle = '#9a3412';
-      ctx.beginPath();
-      ctx.moveTo(cx + 2.5 * zoom, bodyY);
-      ctx.lineTo(cx + 6.8 * zoom, bodyY - 6.5 * zoom);
-      ctx.lineTo(cx + 4.2 * zoom, bodyY - 6.5 * zoom);
-      ctx.closePath();
-      ctx.fill();
-
-      // Hirschkopf
-      ctx.beginPath();
-      ctx.arc(cx + 6.5 * zoom, bodyY - 7 * zoom, 2.4 * zoom, 0, Math.PI * 2);
-      ctx.fill();
-
-      // VIELENDIGES PRACHTGEWEIH (mit weiten Sprossen)
-      ctx.strokeStyle = '#451a03';
-      ctx.lineWidth = 1.4 * zoom;
-      ctx.beginPath();
-      ctx.moveTo(cx + 6.0 * zoom, bodyY - 9 * zoom);
-      ctx.lineTo(cx + 4.5 * zoom, bodyY - 14 * zoom);
-      ctx.moveTo(cx + 7.2 * zoom, bodyY - 9 * zoom);
-      ctx.lineTo(cx + 9.5 * zoom, bodyY - 14.5 * zoom);
-
-      ctx.moveTo(cx + 5.5 * zoom, bodyY - 11 * zoom);
-      ctx.lineTo(cx + 3.2 * zoom, bodyY - 12.5 * zoom);
-      ctx.moveTo(cx + 4.8 * zoom, bodyY - 13 * zoom);
-      ctx.lineTo(cx + 3.0 * zoom, bodyY - 15 * zoom);
-
-      ctx.moveTo(cx + 8.0 * zoom, bodyY - 11 * zoom);
-      ctx.lineTo(cx + 10.5 * zoom, bodyY - 12.5 * zoom);
-      ctx.moveTo(cx + 9.0 * zoom, bodyY - 13 * zoom);
-      ctx.lineTo(cx + 11.2 * zoom, bodyY - 15 * zoom);
-      ctx.stroke();
-
-      // Text-Badge über dem Tier
-      ctx.font = `bold ${Math.max(9, 9 * zoom)}px sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#fed7aa';
-      ctx.fillText(`🦌 Ur-Hirsch (5 Fleisch)`, cx, bodyY - 16 * zoom);
+      glyph = '🐇';
+      baseFontSize = 16;
+      shadowW = 5.0;
+      shadowH = 2.4;
+      badgeText = '🐇 Feldhase (2 Fleisch)';
+      badgeColor = '#e2e8f0';
     }
+
+    const isFleeing = (a.state === 'fleeing');
+    const animSpeed = isFleeing ? 0.024 : 0.006;
+    const stepHop = (a.state === 'fleeing' || a.state === 'moving')
+      ? Math.abs(Math.sin(Date.now() * animSpeed)) * (species === 'hare' ? 4.5 : 2.5) * zoom
+      : Math.sin(Date.now() * 0.003) * 0.8 * zoom;
+
+    // 1. Weicher isometrischer Bodenschatten
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 2 * zoom, shadowW * zoom, shadowH * zoom, 0, 0, Math.PI * 2);
+    ctx.fillStyle = isFleeing ? 'rgba(0,0,0,0.22)' : 'rgba(0,0,0,0.34)';
+    ctx.fill();
+
+    // 2. Crisp 2.5D Glyph
+    const glyphY = cy - (baseFontSize * 0.35) * zoom - stepHop;
+    const fontSize = Math.round(baseFontSize * zoom);
+
+    ctx.font = `${fontSize}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    ctx.shadowColor = 'rgba(0,0,0,0.45)';
+    ctx.shadowBlur = 4 * zoom;
+    ctx.shadowOffsetY = 2 * zoom;
+
+    ctx.fillText(glyph, cx, glyphY);
+
+    // 3. Status-Badge über dem Tier
+    ctx.font = `bold ${Math.max(9, 9 * zoom)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = badgeColor;
+    ctx.fillText(badgeText, cx, glyphY - (baseFontSize * 0.58) * zoom);
 
     ctx.restore();
   }
@@ -1012,11 +854,13 @@ export class Renderer {
     const shadowH = isBaby ? 1.4 : (isChild ? 2.0 : 2.8);
 
     ctx.save();
+    // 1. Bodenschatten
     ctx.beginPath();
     ctx.ellipse(cx, cy + 2 * zoom, shadowW * zoom, shadowH * zoom, 0, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(0,0,0,0.28)';
     ctx.fill();
 
+    // Selektions-Ring
     if (h.id === selectedHumanId) {
       ctx.strokeStyle = '#f59e0b';
       ctx.lineWidth = 1.8 * zoom;
@@ -1026,7 +870,8 @@ export class Renderer {
     }
 
     let bobbing = 0;
-    if (h.state === 'moving') {
+    const isMoving = (h.state === 'moving');
+    if (isMoving) {
       bobbing = Math.abs(Math.sin(Date.now() * 0.012)) * (isBaby ? 1.4 : 2.8) * zoom;
     } else if (h.state === 'playing') {
       bobbing = Math.abs(Math.sin(Date.now() * 0.018)) * 3.6 * zoom;
@@ -1037,6 +882,7 @@ export class Renderer {
     const sitOffset = isSittingAtFire ? 3.0 * zoom * scale : 0;
     const bodyY = cy - (6 * scale) * zoom - bobbing + sitOffset;
 
+    // Grabstein / Verstorbener
     if (!h.isAlive) {
       ctx.fillStyle = '#64748b';
       ctx.fillRect(cx - 5 * zoom, cy - 2 * zoom, 10 * zoom, 4 * zoom);
@@ -1047,21 +893,101 @@ export class Renderer {
       return;
     }
 
-    ctx.fillStyle = h.tint;
-    ctx.beginPath();
-    ctx.arc(cx, bodyY, 4.5 * scale * zoom, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillRect(cx - 3.5 * scale * zoom, bodyY, 7 * scale * zoom, 7 * scale * zoom);
+    // 2. Beine mit Geh-Animation (Schritt-Pendeln beim Laufen)
+    if (!isSittingAtFire) {
+      const legStride = isMoving ? Math.sin(Date.now() * 0.015) * 3.5 * scale * zoom : 0;
+      ctx.fillStyle = (h.tint === '#3b82f6') ? '#b45309' : '#92400e';
+      ctx.fillRect(cx - 2.5 * scale * zoom, bodyY + 5 * scale * zoom, 1.8 * scale * zoom, (4 * scale * zoom) + legStride);
+      ctx.fillRect(cx + 0.8 * scale * zoom, bodyY + 5 * scale * zoom, 1.8 * scale * zoom, (4 * scale * zoom) - legStride);
+    }
 
+    // 3. Rumpf & Fellgewand (Acheuléen-Fellwicklung)
+    ctx.fillStyle = '#5c2e0b';
+    ctx.beginPath();
+    ctx.moveTo(cx - 3.8 * scale * zoom, bodyY);
+    ctx.lineTo(cx + 3.8 * scale * zoom, bodyY);
+    ctx.lineTo(cx + 4.2 * scale * zoom, bodyY + 6.5 * scale * zoom);
+    ctx.lineTo(cx - 4.2 * scale * zoom, bodyY + 6.5 * scale * zoom);
+    ctx.closePath();
+    ctx.fill();
+
+    // Gürtel
+    ctx.strokeStyle = '#1c1917';
+    ctx.lineWidth = 1 * zoom * scale;
+    ctx.beginPath();
+    ctx.moveTo(cx - 4.2 * scale * zoom, bodyY + 4 * scale * zoom);
+    ctx.lineTo(cx + 4.2 * scale * zoom, bodyY + 4 * scale * zoom);
+    ctx.stroke();
+
+    // 4. Arme & Handwerkzeuge
+    ctx.fillStyle = (h.tint === '#3b82f6') ? '#b45309' : '#92400e';
+    ctx.fillRect(cx - 4.8 * scale * zoom, bodyY + 1 * scale * zoom, 1.6 * scale * zoom, 4 * scale * zoom);
+    ctx.fillRect(cx + 3.4 * scale * zoom, bodyY + 1 * scale * zoom, 1.6 * scale * zoom, 4 * scale * zoom);
+
+    // Werkzeugdarstellung in der Hand
+    if (h.state === 'hunting') {
+      ctx.strokeStyle = '#a16207';
+      ctx.lineWidth = 1.4 * zoom;
+      ctx.beginPath();
+      ctx.moveTo(cx + 4 * scale * zoom, bodyY - 6 * scale * zoom);
+      ctx.lineTo(cx + 4 * scale * zoom, bodyY + 8 * scale * zoom);
+      ctx.stroke();
+    } else if (h.state === 'chopping' || h.state === 'mining') {
+      ctx.fillStyle = '#475569';
+      ctx.beginPath();
+      ctx.arc(cx + 4.5 * scale * zoom, bodyY + 4.5 * scale * zoom, 1.8 * scale * zoom, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (h.state === 'digging' || h.state === 'foraging') {
+      ctx.strokeStyle = '#854d0e';
+      ctx.lineWidth = 1.3 * zoom;
+      ctx.beginPath();
+      ctx.moveTo(cx + 4.5 * scale * zoom, bodyY + 1 * scale * zoom);
+      ctx.lineTo(cx + 6 * scale * zoom, bodyY + 8 * scale * zoom);
+      ctx.stroke();
+    }
+
+    // Mutter mit Tragling auf dem Rücken
+    if (h.gender === 'f' && !isBaby && (h.state === 'resting' || h.state === 'socializing')) {
+      ctx.fillStyle = '#fed7aa';
+      ctx.beginPath();
+      ctx.arc(cx - 3.5 * scale * zoom, bodyY - 1 * scale * zoom, 1.8 * scale * zoom, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 5. Kopf, Gesicht & Haartracht
     ctx.fillStyle = (h.ageYears > 50) ? '#cbd5e1' : '#fed7aa';
     ctx.beginPath();
     ctx.arc(cx, bodyY - 6 * scale * zoom, 3.2 * scale * zoom, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = (h.ageYears > 50) ? '#94a3b8' : '#3c2415';
+    const hairColor = (h.ageYears > 50) ? '#94a3b8' : (h.gender === 'm' ? '#1c1917' : '#291b12');
+    ctx.fillStyle = hairColor;
     ctx.beginPath();
-    ctx.arc(cx, bodyY - 7.5 * scale * zoom, 2.6 * scale * zoom, Math.PI, Math.PI * 2);
+    ctx.arc(cx, bodyY - 7.5 * scale * zoom, 2.8 * scale * zoom, Math.PI, Math.PI * 2);
     ctx.fill();
+
+    // Zopf bei Frauen
+    if (h.gender === 'f' && !isBaby) {
+      ctx.fillStyle = hairColor;
+      ctx.fillRect(cx - 3.2 * scale * zoom, bodyY - 7 * scale * zoom, 1.4 * scale * zoom, 4.5 * scale * zoom);
+      ctx.fillRect(cx + 1.8 * scale * zoom, bodyY - 7 * scale * zoom, 1.4 * scale * zoom, 4.5 * scale * zoom);
+    }
+
+    // Bart bei Männern
+    if (h.gender === 'm' && !isChild && !isBaby) {
+      ctx.fillStyle = hairColor;
+      ctx.beginPath();
+      ctx.arc(cx, bodyY - 4.5 * scale * zoom, 1.6 * scale * zoom, 0, Math.PI);
+      ctx.fill();
+    }
+
+    // Namens-Badge bei Selektion
+    if (h.id === selectedHumanId) {
+      ctx.font = `bold ${Math.max(9, 9 * zoom)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#fbbf24';
+      ctx.fillText(`${h.name} (${Math.floor(h.ageYears)}J)`, cx, bodyY - 17 * scale * zoom);
+    }
 
     // Sprech- und Sozial-Icons über den Figuren
     if (h.state === 'socializing') {
@@ -1107,7 +1033,7 @@ export class Renderer {
     if (icon) {
       ctx.font = `${Math.max(10, 11 * zoom)}px sans-serif`;
       ctx.textAlign = 'center';
-      ctx.fillText(icon, cx, bodyY - 14 * zoom);
+      ctx.fillText(icon, cx, bodyY - 13 * zoom);
     }
 
     ctx.restore();

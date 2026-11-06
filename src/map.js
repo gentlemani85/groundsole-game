@@ -348,7 +348,8 @@ export function updateEcology(map, dtSec, logEvent) {
           tile.flowerDots = [];
 
           if (!tile.plant && tile.type === 'grass') {
-            if (map.biomeId !== 'steppe' && Math.random() < 0.5) {
+            const sproutRoll = Math.random();
+            if (sproutRoll < 0.12 && map.biomeId !== 'steppe') {
               tile.plant = {
                 type: 'bush',
                 stage: 1,
@@ -360,18 +361,29 @@ export function updateEcology(map, dtSec, logEvent) {
                 ageTimer: 0,
                 isRootstock: false
               };
-              logEvent(`🌱 Wilder Beerenstrauch aus Kot gekeimt! [${x}, ${y}]`);
-            } else {
+              logEvent(`🌱 Wilder Beerenstrauch keimt auf humosem Boden. [${x}, ${y}]`);
+            } else if (sproutRoll < 0.16) {
+              // Seltene Baumkeimung (4% Chance) - verhindert unendliche Überwucherung
               tile.plant = {
                 type: 'tree',
                 stage: 1,
                 growthTimer: 0,
                 woodStock: 3,
                 seedVariance: Math.random(),
-                maxAge: 900 + Math.random() * 600,
+                maxAge: 1200 + Math.random() * 600,
                 ageTimer: 0
               };
-              logEvent(`🌱 Baumkeimling wurzelt auf Düngeland. [${x}, ${y}]`);
+              logEvent(`🌱 Ein junger Baumkeimling schlägt Wurzeln. [${x}, ${y}]`);
+            } else {
+              // Hauptsächlich blühende Magerwiese
+              for (let i = 0; i < 3; i++) {
+                tile.flowerDots.push({
+                  dx: (Math.random() - 0.5) * 20,
+                  dy: (Math.random() - 0.5) * 10,
+                  color: Math.random() < 0.5 ? '#f59e0b' : '#ec4899',
+                  size: 0.8 + Math.random() * 0.7
+                });
+              }
             }
           }
         }
@@ -381,8 +393,8 @@ export function updateEcology(map, dtSec, logEvent) {
         tile.npk = Math.min(45, tile.npk + dtSec * 0.08);
       }
 
-      // Regeneration von essbaren Wurzelknollen im nahrhaften Grasboden
-      if (tile.type === 'grass' && (!tile.roots || tile.roots < 3) && tile.npk >= 30 && Math.random() < 0.002 * dtSec) {
+      // Nachhaltige Regeneration von Wurzelknollen (stark verlangsamt für spürbare Ressourcenknappheit)
+      if (tile.type === 'grass' && (!tile.roots || tile.roots < 2) && tile.npk >= 40 && Math.random() < 0.0006 * dtSec) {
         tile.roots = (tile.roots || 0) + 1;
       }
 
@@ -486,7 +498,8 @@ export function updateEcology(map, dtSec, logEvent) {
 
         if (p.stage < 3) {
           p.growthTimer = (p.growthTimer || 0) + dtSec * growthRate;
-          if (p.growthTimer >= 16.0) {
+          const targetGrowthTime = (p.type === 'tree') ? 130.0 : 24.0;
+          if (p.growthTimer >= targetGrowthTime) {
             p.stage++;
             p.growthTimer = 0;
             if (p.type === 'bush' && p.stage === 3 && p.isRootstock) {

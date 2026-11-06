@@ -30,34 +30,31 @@ export function computeEcologicalPressure(map, humans, animals, campfireStock, f
   const livingHumans = humans.filter(h => h.isAlive);
   if (livingHumans.length === 0) return 0;
 
-  // 1. Feuer-Kälte & Erlöschen (max. 25 Punkte)
+  // 1. Feuer-Kälte & Erlöschen (max. 30 Punkte)
   // Das Lagerfeuer ist das Herz des Acheuléen-Clans (Wärme, Schutz, Braten).
   let fireScore = 0;
   const currentFire = (fireState && typeof fireState.intensity === 'number') ? fireState.intensity : 100;
   if (currentFire <= 0) {
-    fireScore = 25; // Feuer völlig erloschen!
-  } else if (currentFire < 35) {
-    fireScore = Math.round(((35 - currentFire) / 35) * 25);
+    fireScore = 30; // Feuer völlig erloschen! Bedrohliche Kälte und Dunkelheit.
+  } else if (currentFire < 40) {
+    fireScore = Math.round(((40 - currentFire) / 40) * 30);
   }
 
   // 2. Akuter Hunger im Stamm (max. 35 Punkte)
-  // Rechnet den Anteil hungriger (< 40%) und akut verhungernder (< 20%) Hominiden
-  const hungryCount = livingHumans.filter(h => h.needs.food < 40).length;
-  const starvingCount = livingHumans.filter(h => h.needs.food < 20).length;
+  const hungryCount = livingHumans.filter(h => h.needs.food < 45).length;
+  const starvingCount = livingHumans.filter(h => h.needs.food < 25).length;
   const hungerSeverity = (hungryCount * 0.5 + starvingCount * 0.5) / livingHumans.length;
   const hungerScore = Math.min(35, Math.round(hungerSeverity * 35));
 
-  // 3. Lager-Leere am Feuer (max. 20 Punkte)
-  // Wenn Vorräte auf 0 sinken, steigt die Subsistenz-Not
+  // 3. Lager-Leere am Feuer (max. 25 Punkte)
   let stockScore = 0;
-  if (campfireStock.food === 0) stockScore += 12;
-  else if (campfireStock.food <= 1) stockScore += 6;
+  if (campfireStock.wood === 0) stockScore += 12; // Kein Brennholz am Lager!
+  else if (campfireStock.wood <= 1) stockScore += 6;
 
-  if (campfireStock.wood === 0) stockScore += 8;
-  else if (campfireStock.wood <= 1) stockScore += 4;
+  if (campfireStock.food === 0) stockScore += 13; // Keine Nahrung am Lager!
+  else if (campfireStock.food <= 2) stockScore += 6;
 
-  // 4. Lokale Ressourcen-Erschöpfung im direkten Lager-Umfeld (Radius 6.5) (max. 20 Punkte)
-  // Ein Clan zieht weiter, wenn die nähere Umgebung kahl ist – nicht wenn Kacheln am Kartenrand voll sind.
+  // 4. Lokale Ressourcen-Erschöpfung & Hütten-Mangel im Umfeld (Radius 7) (max. 40 Punkte)
   let localBerries = 0;
   let localTrees = 0;
   let localFish = 0;
@@ -66,7 +63,7 @@ export function computeEcologicalPressure(map, humans, animals, campfireStock, f
   for (let y = 0; y < MAP_SIZE; y++) {
     for (let x = 0; x < MAP_SIZE; x++) {
       const dist = Math.hypot(x - CAMP_CENTER.x, y - CAMP_CENTER.y);
-      if (dist <= 6.5) {
+      if (dist <= 7.0) {
         const t = map[y][x];
         if (t.plant) {
           if (t.plant.type === 'bush' && !t.plant.isRootstock) {
@@ -85,26 +82,30 @@ export function computeEcologicalPressure(map, humans, animals, campfireStock, f
     }
   }
 
-  let localDepletionScore = 0;
-  if (localBerries === 0) localDepletionScore += 7;
-  else if (localBerries <= 2) localDepletionScore += 3;
-
-  if (localTrees === 0) localDepletionScore += 7;
-  else if (localTrees <= 2) localDepletionScore += 3;
-
-  if (localFish === 0) localDepletionScore += 6;
-  else if (localFish <= 2) localDepletionScore += 2;
-
-  // Bonus: Mangel an Schutzhütten bei erloschenem Feuer
-  if (localShelters === 0 && currentFire < 20) {
-    localDepletionScore = Math.min(20, localDepletionScore + 5);
+  // Schutzhütten-Not: Ohne Hütte ist der Stamm Wind und Wetter schutzlos ausgeliefert
+  let shelterScore = 0;
+  if (localShelters === 0) {
+    shelterScore = 20; // Keine einzige Schutzhütte mehr im Lager!
+  } else if (localShelters === 1) {
+    shelterScore = 8;
   }
 
-  const totalPressure = Math.min(100, fireScore + hungerScore + stockScore + localDepletionScore);
+  let localDepletionScore = 0;
+  if (localTrees === 0) localDepletionScore += 10;
+  else if (localTrees <= 2) localDepletionScore += 5;
+
+  if (localBerries === 0) localDepletionScore += 8;
+  else if (localBerries <= 2) localDepletionScore += 4;
+
+  if (localFish === 0) localDepletionScore += 7;
+  else if (localFish <= 2) localDepletionScore += 3;
+
+  const totalPressure = Math.min(100, fireScore + shelterScore + stockScore + localDepletionScore + hungerScore);
 
   migrationState.pressure = totalPressure;
   migrationState.pressureDetails = {
     fire: fireScore,
+    shelter: shelterScore,
     hunger: hungerScore,
     stock: stockScore,
     localDepletion: localDepletionScore,
