@@ -49,6 +49,7 @@
    * **DOM-Schutz:** Chirurgische Node-Updates verhindern DOM-Neuerstellungen im 60Hz-Takt und sichern flüssiges Scrollen.
 11. **Trampelfade (Desire Paths) & Renaturierung:**
    * **Emergenz:** Viel begangene Kacheln (z. B. zwischen Feuer, Beerensträuchern und Fluss) verdichten sich durch Fußtritte organisch zu Pfaden (`path`). Auf Pfaden bewegen sich Hominiden 1.6-mal schneller.
+   * **Pflanzen-Immunität:** Bäume und Sträucher werden niemals durch Schritte zertrampelt oder gelöscht. Ein Pfad kann ausschließlich auf offener Wiese ohne Gehölze entstehen. Wird ein Strauch auf einen bisherigen Pfad gepflanzt, wird der Pfad an dieser Stelle dauerhaft blockiert.
    * **Sukzession:** Wird ein Pfad über ~2-3 Spieljahre nicht mehr betreten, baut sich der Trampeldruck ab; die Grasnarbe schließt sich und die Wiese erobert den Weg vollständig zurück (inkl. Wildblumen bei magerem NPK).
 12. **Säuglinge & Mutterbindung (0 bis 4 Jahre):**
    * **Traglinge:** Säuglinge bleiben bis zum 4. Lebensjahr fest bei ihrer Mutter, werden getragen und über Muttermilch versorgt. Sie verrichten keinerlei Arbeiten.

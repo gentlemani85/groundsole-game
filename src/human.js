@@ -394,14 +394,19 @@ export class Human {
       const onPath = (curTile && curTile.type === 'path');
       const inWater = (curTile && curTile.type === 'water');
 
-      // Trampelpfad-Mechanik: Viel begangene Kacheln werden organisch zu Pfaden
+      // Trampelpfad-Mechanik: Nur freie Wiese ohne Bäume, Sträucher, Felsen oder Bauten wird zum Pfad!
+      // Sträucher und Bäume werden NIEMALS durch Schritte zertrampelt oder gelöscht.
       if (curTile) {
-        curTile.trample = Math.min(100, (curTile.trample || 0) + dt * 16);
-        if (curTile.type === 'grass' && curTile.trample >= 55) {
-          curTile.type = 'path';
-          curTile.isDesirePath = true;
-          curTile.plant = null;
-          curTile.flowerDots = [];
+        if (!curTile.plant && curTile.type !== 'rock' && curTile.type !== 'fire' && curTile.type !== 'shelter') {
+          curTile.trample = Math.min(100, (curTile.trample || 0) + dt * 16);
+          if (curTile.type === 'grass' && curTile.trample >= 55) {
+            curTile.type = 'path';
+            curTile.isDesirePath = true;
+            curTile.flowerDots = [];
+          }
+        } else if (curTile.plant) {
+          // Kachel mit Pflanze bleibt vor Pfad-Überprägung geschützt
+          curTile.trample = 0;
         }
       }
 

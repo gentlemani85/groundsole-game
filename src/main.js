@@ -409,18 +409,30 @@ function applyToolAtScreen(sx, sy) {
     if (activeTool === 'rock') {
       tile.type = 'rock';
       tile.plant = null;
+      tile.trample = 0;
+      tile.isDesirePath = false;
       logEvent(`🪨 Felsen platziert.`);
     } else if (activeTool === 'tree') {
       tile.type = 'grass';
-      tile.plant = { type: 'tree', stage: 1, growthTimer: 0, woodStock: 3, seedVariance: Math.random() };
+      tile.plant = { type: 'tree', stage: 1, growthTimer: 0, woodStock: 3, seedVariance: Math.random(), maxAge: 1200, ageTimer: 0 };
       tile.npk = Math.max(tile.npk, 40);
+      tile.trample = 0;
+      tile.isDesirePath = false;
+      tile.flowerDots = [];
+      logEvent(`🌳 Baum gepflanzt.`);
     } else if (activeTool === 'bush') {
       tile.type = 'grass';
-      tile.plant = { type: 'bush', stage: 1, growthTimer: 0, berries: 0, berryTimer: 0, seedVariance: Math.random() };
+      tile.plant = { type: 'bush', stage: 1, growthTimer: 0, berries: 0, berryTimer: 0, seedVariance: Math.random(), maxAge: 450, ageTimer: 0 };
       tile.npk = Math.max(tile.npk, 35);
+      tile.trample = 0;
+      tile.isDesirePath = false;
+      tile.flowerDots = [];
+      logEvent(`🍇 Beerenstrauch gepflanzt.`);
     } else if (activeTool === 'fire') {
       tile.type = 'fire';
       tile.plant = null;
+      tile.trample = 0;
+      tile.isDesirePath = false;
       const isCamp = (grid.x === CAMP_CENTER.x && grid.y === CAMP_CENTER.y);
       tile.fire = {
         intensity: 100,
@@ -434,14 +446,20 @@ function applyToolAtScreen(sx, sy) {
       tile.type = 'water';
       tile.isFord = false;
       tile.plant = null;
+      tile.trample = 0;
+      tile.isDesirePath = false;
     } else if (activeTool === 'path') {
       tile.type = 'path';
       tile.isFord = false;
       tile.plant = null;
+      tile.trample = 100;
+      tile.isDesirePath = false;
     } else if (activeTool === 'grass') {
       tile.type = 'grass';
       tile.npk = 18;
       tile.plant = null;
+      tile.trample = 0;
+      tile.isDesirePath = false;
       tile.flowerDots = [];
       for (let i = 0; i < 4; i++) {
         tile.flowerDots.push({
@@ -454,6 +472,8 @@ function applyToolAtScreen(sx, sy) {
     } else if (activeTool === 'shelter') {
       tile.type = 'shelter';
       tile.plant = null;
+      tile.trample = 0;
+      tile.isDesirePath = false;
       tile.shelter = { condition: 100, capacity: 2 };
       logEvent(`⛺ Schutzhütte platziert bei [${grid.x}, ${grid.y}] (Kapazität: 2).`);
     } else if (activeTool === 'inspect') {
