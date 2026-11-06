@@ -34,10 +34,14 @@ canvas {
   border-left: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   flex-direction: column;
-  padding: 18px;
+  padding: 18px 18px 0 18px;
   gap: 12px;
   box-shadow: -10px 0 30px rgba(0,0,0,0.6);
   z-index: 10;
+  height: 100vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
 }
 .panel-header {
   border-bottom: 1px solid rgba(255,255,255,0.08);
@@ -207,7 +211,6 @@ canvas {
   color: #6b7280;
 }
 #inspector-box {
-  flex: 1;
   background: #15191e;
   border: 1px solid rgba(255,255,255,0.06);
   border-radius: 9px;
@@ -215,7 +218,8 @@ canvas {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  overflow-y: auto;
+  overflow-y: visible;
+  flex-shrink: 0;
 }
 .human-card {
   background: #1c2128;
@@ -298,10 +302,16 @@ canvas {
 .fill-libido { background: #ec4899; }
 .fill-age { background: #94a3b8; }
 .footer-controls {
+  position: sticky;
+  bottom: 0;
+  margin: 4px -18px 0 -18px;
+  background: rgba(18, 21, 25, 0.98);
+  backdrop-filter: blur(12px);
+  padding: 10px 18px 14px 18px;
+  border-top: 1px solid rgba(255,255,255,0.08);
   display: flex;
   gap: 6px;
-  border-top: 1px solid rgba(255,255,255,0.08);
-  padding-top: 10px;
+  z-index: 5;
 }
 .speed-btn {
   flex: 1;
