@@ -1,4 +1,4 @@
-import { campfireStock, fireState, MAP_SIZE, CAMP_CENTER, SHELTER_CONFIG } from './config.js?v=5';
+import { campfireStock, fireState, MAP_SIZE, CAMP_CENTER, SHELTER_CONFIG } from './config.js?v=6';
 
 let nextId = 4;
 
@@ -106,6 +106,15 @@ export class Human {
 
     // 3. Autonome Prioritäten (Vorausschauend trinken & essen vor akutem Kollaps)
     if (this.state === 'idle') {
+      // Höchste logistische Priorität: Getragene Beute / Rohstoffe sofort ins Lager bringen!
+      if (this.carried) {
+        this.targetX = CAMP_CENTER.x;
+        this.targetY = CAMP_CENTER.y;
+        this.state = 'moving';
+        this.actionIntent = 'deliver_stock';
+        return;
+      }
+
       if (this.needs.bladder > 85) {
         this.seekRelief(map);
       } else if (this.needs.water < 55) { // Trinkt bereits ab 55% Mangel (nicht erst bei 35%)
@@ -118,7 +127,7 @@ export class Human {
       // Jäger sucht Wild
       else if (this.role.includes('Jäger') && animals.length > 0) {
         this.seekHunt(animals);
-      }
+      } 
       // Fortpflanzung (ab 50% Libido)
       else if (this.needs.libido > 50 && this.gender === 'm') {
         this.seekMate(humans);
@@ -196,6 +205,12 @@ export class Human {
       const sprintFactor = isHuntingSprint ? 1.45 : 1.0;
       const speed = terrainFactor * sprintFactor * (this.ageYears > 50 ? 0.75 : 1.0) * dt;
 
+      // Vorrats-Lieferung: Sobald man im Umkreis des Lagers (1.5 Kacheln) ist, abladen!
+      if (this.actionIntent === 'deliver_stock' && Math.hypot(this.x - CAMP_CENTER.x, this.y - CAMP_CENTER.y) <= 1.5) {
+        this.onArrived(map, humans, animals, logEvent);
+        return;
+      }
+
       if (dist < speed) {
         this.x = this.targetX;
         this.y = this.targetY;
@@ -209,9 +224,16 @@ export class Human {
 
         // WASSER-FURT-REGEL:
         // Wasser ist passierbar WENN waterWidth <= 2 (Furt).
-        // Ist waterWidth >= 3 (tiefes Wasser), wird blockiert!
+        // Ist waterWidth >= 3 (tiefes Wasser), wird am Fluss entlang zur nächsten seichten Furt ausgewichen!
         if (targetTile && targetTile.type === 'water' && !targetTile.isFord) {
-          this.state = 'idle'; // Tiefes Wasser blockiert
+          const tryUpY = Math.max(1, this.y - 0.7);
+          const tryDownY = Math.min(MAP_SIZE - 2, this.y + 0.7);
+          const upTile = map[Math.round(tryUpY)] && map[Math.round(tryUpY)][tX];
+          if (upTile && (upTile.type !== 'water' || upTile.isFord)) {
+            this.y = tryUpY;
+          } else {
+            this.y = tryDownY;
+          }
         } else {
           this.x = nextX;
           this.y = nextY;
