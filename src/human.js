@@ -1,4 +1,4 @@
-import { campfireStock, fireState, MAP_SIZE, CAMP_CENTER, SHELTER_CONFIG } from './config.js?v=6';
+import { campfireStock, fireState, MAP_SIZE, CAMP_CENTER, SHELTER_CONFIG } from './config.js?v=7';
 
 let nextId = 4;
 
@@ -772,10 +772,26 @@ export class Human {
     } else if (this.state === 'chopping') {
       const gx = Math.round(this.x);
       const gy = Math.round(this.y);
-      const t = map[gy][gx];
+      const t = map[gy] && map[gy][gx];
       if (t && t.plant && t.plant.type === 'tree') {
         t.plant.woodStock--;
-        if (t.plant.woodStock <= 0) t.plant = null;
+        if (t.plant.woodStock <= 0) {
+          // 45% Chance auf Stockausschlag / natürlicher Neuaustrieb am Wurzelstock
+          if (Math.random() < 0.45) {
+            t.plant = {
+              type: 'tree',
+              stage: 1,
+              growthTimer: 0,
+              woodStock: 3,
+              seedVariance: Math.random(),
+              maxAge: 900 + Math.random() * 600,
+              ageTimer: 0
+            };
+            logEvent(`🌱 Baumstumpf treibt neu aus (Stockausschlag) bei [${gx}, ${gy}].`);
+          } else {
+            t.plant = null;
+          }
+        }
       }
       this.carried = '🪵 Holz';
       this.targetX = CAMP_CENTER.x;

@@ -1,4 +1,4 @@
-import { MAP_SIZE, CAMP_CENTER, SHELTER_CONFIG, campfireStock, fireState } from './config.js?v=6';
+import { MAP_SIZE, CAMP_CENTER, SHELTER_CONFIG, campfireStock, fireState } from './config.js?v=7';
 
 export function createMap() {
   const map = [];
@@ -24,12 +24,29 @@ export function createMap() {
       }
       // Wilde Waldzone im Westen
       else if (x <= 5 && Math.random() < 0.35) {
-        plant = { type: 'tree', stage: 3, woodStock: 4, seedVariance: Math.random() };
+        const treeMaxAge = 900 + Math.random() * 600;
+        plant = {
+          type: 'tree',
+          stage: 3,
+          woodStock: 4,
+          seedVariance: Math.random(),
+          maxAge: treeMaxAge,
+          ageTimer: Math.random() * (treeMaxAge * 0.7)
+        };
         npk = 65;
       }
       // Beerensträucher im Süden UND in der Nähe des Lagers
       else if ((y >= 20 && Math.random() < 0.25) || (Math.hypot(x - CAMP_CENTER.x, y - CAMP_CENTER.y) > 3 && Math.hypot(x - CAMP_CENTER.x, y - CAMP_CENTER.y) < 7 && Math.random() < 0.12)) {
-        plant = { type: 'bush', stage: 3, berries: 3, berryTimer: 0, seedVariance: Math.random() };
+        const bushMaxAge = 350 + Math.random() * 300;
+        plant = {
+          type: 'bush',
+          stage: 3,
+          berries: 3,
+          berryTimer: 0,
+          seedVariance: Math.random(),
+          maxAge: bushMaxAge,
+          ageTimer: Math.random() * (bushMaxAge * 0.7)
+        };
         npk = 55;
       }
       // Pfad zum Wasser
@@ -98,11 +115,28 @@ export function updateEcology(map, dtSec, logEvent) {
           tile.flowerDots = [];
 
           if (!tile.plant && tile.type === 'grass') {
-            if (Math.random() < 0.6) {
-              tile.plant = { type: 'bush', stage: 1, growthTimer: 0, berries: 0, berryTimer: 0, seedVariance: Math.random() };
+            if (Math.random() < 0.5) {
+              tile.plant = {
+                type: 'bush',
+                stage: 1,
+                growthTimer: 0,
+                berries: 0,
+                berryTimer: 0,
+                seedVariance: Math.random(),
+                maxAge: 350 + Math.random() * 250,
+                ageTimer: 0
+              };
               logEvent(`🌱 Wilder Beerenstrauch aus Kot gekeimt! [${x}, ${y}]`);
             } else {
-              tile.plant = { type: 'tree', stage: 1, growthTimer: 0, woodStock: 3, seedVariance: Math.random() };
+              tile.plant = {
+                type: 'tree',
+                stage: 1,
+                growthTimer: 0,
+                woodStock: 3,
+                seedVariance: Math.random(),
+                maxAge: 900 + Math.random() * 600,
+                ageTimer: 0
+              };
               logEvent(`🌱 Baumkeimling wurzelt auf Düngeland. [${x}, ${y}]`);
             }
           }
@@ -179,6 +213,18 @@ export function updateEcology(map, dtSec, logEvent) {
         const p = tile.plant;
         const growthRate = (tile.npk / 40);
 
+        // Natürlicher Alterungs- und Totholz-Zyklus (Verhindert ewiges Überwuchern)
+        if (p.stage === 3) {
+          p.ageTimer = (p.ageTimer || 0) + dtSec;
+          const maxAge = p.maxAge || (p.type === 'bush' ? 450 : 1200);
+          if (p.ageTimer >= maxAge) {
+            const compostNPK = p.type === 'bush' ? 25 : 40;
+            tile.npk = Math.min(100, tile.npk + compostNPK);
+            tile.plant = null;
+            continue;
+          }
+        }
+
         if (p.stage < 3) {
           p.growthTimer = (p.growthTimer || 0) + dtSec * growthRate;
           if (p.growthTimer >= 18.0) {
@@ -196,13 +242,36 @@ export function updateEcology(map, dtSec, logEvent) {
           }
         }
 
-        if (p.stage === 3 && Math.random() < (0.0012 * dtSec)) {
+        // Samenverbreitung mit ökologischer Kronendichte (Lichtmangel-Filter)
+        const seedChance = (p.type === 'bush' ? 0.0004 : 0.0008) * dtSec;
+        if (p.stage === 3 && Math.random() < seedChance) {
           const nx = Math.max(0, Math.min(MAP_SIZE - 1, x + (Math.random() < 0.5 ? -1 : 1)));
           const ny = Math.max(0, Math.min(MAP_SIZE - 1, y + (Math.random() < 0.5 ? -1 : 1)));
           const nTile = map[ny][nx];
           if (nTile.type === 'grass' && !nTile.plant) {
-            nTile.plant = { type: p.type, stage: 1, growthTimer: 0, berries: 0, berryTimer: 0, woodStock: 3, seedVariance: Math.random() };
-            logEvent(`🍃 Wind hat Samen verweht: Neuer ${p.type === 'bush' ? 'Strauch' : 'Baum'} keimt bei [${nx}, ${ny}].`);
+            // Kronendichte: Wenn im 3x3 Umfeld bereits >= 2 Pflanzen stehen, fehlt das Sonnenlicht
+            let neighborCount = 0;
+            for (let dy = -1; dy <= 1; dy++) {
+              for (let dx = -1; dx <= 1; dx++) {
+                const ct = map[ny + dy] && map[ny + dy][nx + dx];
+                if (ct && ct.plant) neighborCount++;
+              }
+            }
+            if (neighborCount <= 2) {
+              const maxA = p.type === 'bush' ? (350 + Math.random() * 250) : (900 + Math.random() * 600);
+              nTile.plant = {
+                type: p.type,
+                stage: 1,
+                growthTimer: 0,
+                berries: 0,
+                berryTimer: 0,
+                woodStock: 3,
+                seedVariance: Math.random(),
+                maxAge: maxA,
+                ageTimer: 0
+              };
+              logEvent(`🍃 Wind hat Samen verweht: Neuer ${p.type === 'bush' ? 'Strauch' : 'Baum'} keimt bei [${nx}, ${ny}].`);
+            }
           }
         }
       }

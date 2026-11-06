@@ -1,9 +1,9 @@
-import { MAP_SIZE, campfireStock, CAMP_CENTER, fireState } from './config.js?v=6';
-import { Camera } from './isometric.js?v=6';
-import { createMap, updateEcology } from './map.js?v=6';
-import { Renderer } from './render.js?v=6';
-import { createInitialHumans, maybeSpawnForeignWanderer } from './human.js?v=6';
-import { maybeSpawnWildAnimal } from './wildlife.js?v=6';
+import { MAP_SIZE, campfireStock, CAMP_CENTER, fireState } from './config.js?v=7';
+import { Camera } from './isometric.js?v=7';
+import { createMap, updateEcology } from './map.js?v=7';
+import { Renderer } from './render.js?v=7';
+import { createInitialHumans, maybeSpawnForeignWanderer } from './human.js?v=7';
+import { maybeSpawnWildAnimal } from './wildlife.js?v=7';
 
 // Setup DOM
 const canvas = document.getElementById('game-canvas');

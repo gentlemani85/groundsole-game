@@ -1,4 +1,4 @@
-import { MAP_SIZE, campfireStock } from './config.js?v=6';
+import { MAP_SIZE, campfireStock } from './config.js?v=7';
 
 let nextAnimalId = 1;
 
@@ -128,6 +128,17 @@ export class WildAnimal {
     if (this.state === 'grazing') {
       this.stamina = Math.min(100, this.stamina + dt * 10);
       this.stateTimer -= dt;
+
+      // Verbiss durch Wildtiere: Hirsch frisst an Beerensträuchern
+      const gx = Math.round(this.x);
+      const gy = Math.round(this.y);
+      const curTile = map[gy] && map[gy][gx];
+      if (curTile && curTile.plant && curTile.plant.type === 'bush') {
+        if (curTile.plant.berries > 0 && Math.random() < 0.15 * dt) {
+          curTile.plant.berries--;
+        }
+      }
+
       if (this.stateTimer <= 0) {
         const rx = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(this.x + (Math.random() * 4 - 2))));
         const ry = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(this.y + (Math.random() * 4 - 2))));
