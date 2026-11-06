@@ -34,7 +34,7 @@ for (let i = 0; i < TICKS; i++) {
   }
 
   // Genpool
-  maybeSpawnForeignWanderer(humans, logEvent);
+  maybeSpawnForeignWanderer(humans, logEvent, map);
 
   // Hominiden
   for (const h of humans) {

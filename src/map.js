@@ -1,4 +1,4 @@
-import { MAP_SIZE, CAMP_CENTER, SHELTER_CONFIG, campfireStock, fireState } from './config.js?v=7';
+import { MAP_SIZE, CAMP_CENTER, SHELTER_CONFIG, campfireStock, fireState } from './config.js?v=8';
 
 export function createMap() {
   const map = [];

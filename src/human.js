@@ -1,4 +1,5 @@
-import { campfireStock, fireState, MAP_SIZE, CAMP_CENTER, SHELTER_CONFIG } from './config.js?v=7';
+import { campfireStock, fireState, MAP_SIZE, CAMP_CENTER, SHELTER_CONFIG } from './config.js?v=8';
+import { findPath, isTileWalkable } from './pathfinding.js?v=8';
 
 let nextId = 4;
 
@@ -43,6 +44,30 @@ export class Human {
 
     this.state = 'idle';
     this.stateTimer = 0;
+    this.path = [];
+  }
+
+  setMoveTarget(map, tx, ty, intent, huntTarget = null) {
+    this.targetX = tx;
+    this.targetY = ty;
+    this.actionIntent = intent;
+    this.huntTarget = huntTarget;
+
+    const p = findPath(map, this.x, this.y, tx, ty);
+    if (!p) {
+      this.path = [];
+      this.state = 'idle';
+      this.actionIntent = 'idle';
+      this.huntTarget = null;
+      return false;
+    }
+
+    if (p.length > 1 && Math.hypot(p[0].x - this.x, p[0].y - this.y) < 0.4) {
+      p.shift();
+    }
+    this.path = p;
+    this.state = 'moving';
+    return true;
   }
 
   update(dt, map, humans, animals, logEvent) {
@@ -108,10 +133,7 @@ export class Human {
     if (this.state === 'idle') {
       // Höchste logistische Priorität: Getragene Beute / Rohstoffe sofort ins Lager bringen!
       if (this.carried) {
-        this.targetX = CAMP_CENTER.x;
-        this.targetY = CAMP_CENTER.y;
-        this.state = 'moving';
-        this.actionIntent = 'deliver_stock';
+        this.setMoveTarget(map, CAMP_CENTER.x, CAMP_CENTER.y, 'deliver_stock');
         return;
       }
 
@@ -126,11 +148,11 @@ export class Human {
       } 
       // Jäger sucht Wild
       else if (this.role.includes('Jäger') && animals.length > 0) {
-        this.seekHunt(animals);
+        this.seekHunt(animals, map);
       } 
       // Fortpflanzung (ab 50% Libido)
       else if (this.needs.libido > 50 && this.gender === 'm') {
-        this.seekMate(humans);
+        this.seekMate(humans, map);
       } 
       // Nutzen & Lager-Aufbau
       else if (this.needs.water > 55 && this.needs.food > 55) {
@@ -140,7 +162,7 @@ export class Human {
       }
     }
 
-    // 4. Bewegung & Hetzjagd mit Furt-Physik
+    // 4. Bewegung & Hetzjagd mit deterministischer BFS-Pfadfindung
     if (this.state === 'moving') {
       // ECHTE HETZJAGD: Jäger verfolgt das flüchtende Wild dynamisch!
       if (this.actionIntent === 'hunt_animal' && this.huntTarget) {
@@ -148,6 +170,7 @@ export class Human {
           this.state = 'idle';
           this.actionIntent = 'idle';
           this.huntTarget = null;
+          this.path = [];
           return;
         }
 
@@ -166,14 +189,27 @@ export class Human {
           this.y = this.huntTarget.y;
           this.huntTarget.isAlive = false;
           this.carried = '🥩 Wildbret';
-          this.targetX = CAMP_CENTER.x;
-          this.targetY = CAMP_CENTER.y;
-          this.state = 'moving';
-          this.actionIntent = 'deliver_stock';
           this.huntTarget = null;
           this.utilityContributed += 35;
           logEvent(`🏹 ${this.name} hat den flüchtenden Ur-Hirsch im Sprint eingeholt und erlegt! Frisches Fleisch fürs Lager.`);
+          this.setMoveTarget(map, CAMP_CENTER.x, CAMP_CENTER.y, 'deliver_stock');
           return;
+        }
+
+        // Pfad bei flüchtendem Wild bei Bedarf nachjustieren
+        const lastWp = this.path && this.path[this.path.length - 1];
+        if (!lastWp || Math.hypot(this.huntTarget.x - lastWp.x, this.huntTarget.y - lastWp.y) > 2) {
+          const p = findPath(map, this.x, this.y, this.huntTarget.x, this.huntTarget.y);
+          if (p) {
+            if (p.length > 1 && Math.hypot(p[0].x - this.x, p[0].y - this.y) < 0.4) p.shift();
+            this.path = p;
+          } else {
+            this.state = 'idle';
+            this.actionIntent = 'idle';
+            this.huntTarget = null;
+            this.path = [];
+            return;
+          }
         }
 
         // Überlebenssicherung: Wenn Jäger entkräftet ist oder Hunger/Durst droht, Jagd abbrechen!
@@ -181,13 +217,57 @@ export class Human {
           this.state = 'idle';
           this.actionIntent = 'idle';
           this.huntTarget = null;
+          this.path = [];
           logEvent(`😮‍💨 ${this.name} bricht die Jagd rechtzeitig ab, um nicht zu entkräften.`);
           return;
         }
       }
 
-      const dx = this.targetX - this.x;
-      const dy = this.targetY - this.y;
+      // Vorrats-Lieferung: Sobald man im Umkreis des Lagers (1.5 Kacheln) ist, abladen!
+      if (this.actionIntent === 'deliver_stock' && Math.hypot(this.x - CAMP_CENTER.x, this.y - CAMP_CENTER.y) <= 1.5) {
+        this.path = [];
+        this.onArrived(map, humans, animals, logEvent);
+        return;
+      }
+
+      // Falls kein Pfad vorhanden oder Wegpunkte abgearbeitet sind
+      if (!this.path || this.path.length === 0) {
+        const distToEnd = Math.hypot(this.targetX - this.x, this.targetY - this.y);
+        if (distToEnd <= 0.4) {
+          this.x = this.targetX;
+          this.y = this.targetY;
+          this.onArrived(map, humans, animals, logEvent);
+        } else {
+          const p = findPath(map, this.x, this.y, this.targetX, this.targetY);
+          if (p && p.length > 0) {
+            if (p.length > 1 && Math.hypot(p[0].x - this.x, p[0].y - this.y) < 0.4) p.shift();
+            this.path = p;
+          } else {
+            this.state = 'idle';
+            this.actionIntent = 'idle';
+            this.path = [];
+          }
+        }
+        return;
+      }
+
+      const targetWp = this.path[0];
+      // Hindernis-Check: Wurde die Kachel zwischenzeitlich geflutet?
+      if (!isTileWalkable(map, targetWp.x, targetWp.y)) {
+        const p = findPath(map, this.x, this.y, this.targetX, this.targetY);
+        if (p && p.length > 0) {
+          if (p.length > 1 && Math.hypot(p[0].x - this.x, p[0].y - this.y) < 0.4) p.shift();
+          this.path = p;
+        } else {
+          this.state = 'idle';
+          this.actionIntent = 'idle';
+          this.path = [];
+        }
+        return;
+      }
+
+      const dx = targetWp.x - this.x;
+      const dy = targetWp.y - this.y;
       const dist = Math.hypot(dx, dy);
 
       const cx = Math.round(this.x);
@@ -196,48 +276,24 @@ export class Human {
       const onPath = (curTile && curTile.type === 'path');
       const inWater = (curTile && curTile.type === 'water');
 
-      // Seichtes Wasser bremst etwas ab, Pfad beschleunigt, Jagd gibt Sprint-Bonus
       let terrainFactor = 1.0;
       if (onPath) terrainFactor = 1.6;
-      else if (inWater) terrainFactor = 0.65; // Waten bremst
+      else if (inWater) terrainFactor = 0.65;
 
       const isHuntingSprint = (this.actionIntent === 'hunt_animal');
       const sprintFactor = isHuntingSprint ? 1.45 : 1.0;
       const speed = terrainFactor * sprintFactor * (this.ageYears > 50 ? 0.75 : 1.0) * dt;
 
-      // Vorrats-Lieferung: Sobald man im Umkreis des Lagers (1.5 Kacheln) ist, abladen!
-      if (this.actionIntent === 'deliver_stock' && Math.hypot(this.x - CAMP_CENTER.x, this.y - CAMP_CENTER.y) <= 1.5) {
-        this.onArrived(map, humans, animals, logEvent);
-        return;
-      }
-
-      if (dist < speed) {
-        this.x = this.targetX;
-        this.y = this.targetY;
-        this.onArrived(map, humans, animals, logEvent);
-      } else {
-        const nextX = this.x + (dx / dist) * speed;
-        const nextY = this.y + (dy / dist) * speed;
-        const tX = Math.round(nextX);
-        const tY = Math.round(nextY);
-        const targetTile = map[tY] && map[tY][tX];
-
-        // WASSER-FURT-REGEL:
-        // Wasser ist passierbar WENN waterWidth <= 2 (Furt).
-        // Ist waterWidth >= 3 (tiefes Wasser), wird am Fluss entlang zur nächsten seichten Furt ausgewichen!
-        if (targetTile && targetTile.type === 'water' && !targetTile.isFord) {
-          const tryUpY = Math.max(1, this.y - 0.7);
-          const tryDownY = Math.min(MAP_SIZE - 2, this.y + 0.7);
-          const upTile = map[Math.round(tryUpY)] && map[Math.round(tryUpY)][tX];
-          if (upTile && (upTile.type !== 'water' || upTile.isFord)) {
-            this.y = tryUpY;
-          } else {
-            this.y = tryDownY;
-          }
-        } else {
-          this.x = nextX;
-          this.y = nextY;
+      if (dist <= speed) {
+        this.x = targetWp.x;
+        this.y = targetWp.y;
+        this.path.shift();
+        if (this.path.length === 0) {
+          this.onArrived(map, humans, animals, logEvent);
         }
+      } else {
+        this.x += (dx / dist) * speed;
+        this.y += (dy / dist) * speed;
       }
     }
 
@@ -258,14 +314,10 @@ export class Human {
     logEvent(`🪦 ${this.name} ist mit ${Math.floor(this.ageYears)} Jahren gestorben: ${cause}.`);
   }
 
-  seekHunt(animals) {
+  seekHunt(animals, map) {
     const deer = animals.find(a => a.isAlive);
     if (deer) {
-      this.targetX = deer.x;
-      this.targetY = deer.y;
-      this.state = 'moving';
-      this.actionIntent = 'hunt_animal';
-      this.huntTarget = deer;
+      this.setMoveTarget(map, deer.x, deer.y, 'hunt_animal', deer);
     }
   }
 
@@ -284,19 +336,13 @@ export class Human {
       }
     }
     if (bestTarget) {
-      this.targetX = bestTarget.x;
-      this.targetY = bestTarget.y;
-      this.state = 'moving';
-      this.actionIntent = 'relieve';
+      this.setMoveTarget(map, bestTarget.x, bestTarget.y, 'relieve');
     }
   }
 
   seekWater(map) {
     if (campfireStock.water > 0 && Math.hypot(this.x - CAMP_CENTER.x, this.y - CAMP_CENTER.y) < 6) {
-      this.targetX = CAMP_CENTER.x;
-      this.targetY = CAMP_CENTER.y;
-      this.state = 'moving';
-      this.actionIntent = 'drink_stock';
+      this.setMoveTarget(map, CAMP_CENTER.x, CAMP_CENTER.y, 'drink_stock');
       return;
     }
     // Ufer-Kachel suchen (Grasfeld, das direkt an Wasser grenzt – nicht das Wasser selbst betreten!)
@@ -322,10 +368,7 @@ export class Human {
     }
 
     if (shoreTile) {
-      this.targetX = shoreTile.x;
-      this.targetY = shoreTile.y;
-      this.state = 'moving';
-      this.actionIntent = 'drink_source';
+      this.setMoveTarget(map, shoreTile.x, shoreTile.y, 'drink_source');
     } else {
       this.wander(map);
     }
@@ -333,10 +376,7 @@ export class Human {
 
   seekFood(map) {
     if (campfireStock.food > 0 && Math.hypot(this.x - CAMP_CENTER.x, this.y - CAMP_CENTER.y) < 6) {
-      this.targetX = CAMP_CENTER.x;
-      this.targetY = CAMP_CENTER.y;
-      this.state = 'moving';
-      this.actionIntent = 'eat_stock';
+      this.setMoveTarget(map, CAMP_CENTER.x, CAMP_CENTER.y, 'eat_stock');
       return;
     }
     let nearestBush = null;
@@ -354,10 +394,7 @@ export class Human {
       }
     }
     if (nearestBush) {
-      this.targetX = nearestBush.x;
-      this.targetY = nearestBush.y;
-      this.state = 'moving';
-      this.actionIntent = 'eat_bush';
+      this.setMoveTarget(map, nearestBush.x, nearestBush.y, 'eat_bush');
     } else {
       this.wander(map);
     }
@@ -382,27 +419,21 @@ export class Human {
 
     if (availableShelters.length > 0) {
       availableShelters.sort((a, b) => a.dist - b.dist);
-      this.targetX = availableShelters[0].x;
-      this.targetY = availableShelters[0].y;
-      this.state = 'moving';
-      this.actionIntent = 'rest_shelter';
+      this.setMoveTarget(map, availableShelters[0].x, availableShelters[0].y, 'rest_shelter');
       return;
     }
 
     // Wenn alle Hütten voll sind oder keine steht: Rast an einer warmen Feuerstelle
     const fire = this.findNearestLitFire(map);
     if (fire) {
-      this.targetX = fire.x;
-      this.targetY = fire.y;
-      this.state = 'moving';
-      this.actionIntent = 'rest_fire';
+      this.setMoveTarget(map, fire.x, fire.y, 'rest_fire');
       return;
     }
 
     this.wander(map);
   }
 
-  seekMate(humans) {
+  seekMate(humans, map) {
     const mate = humans.find(h => (
       h.isAlive && 
       h.gender === 'f' && 
@@ -413,20 +444,14 @@ export class Human {
       h.needs.libido > 25
     ));
     if (mate) {
-      this.targetX = Math.round(mate.x);
-      this.targetY = Math.round(mate.y);
-      this.state = 'moving';
-      this.actionIntent = 'approach_mate';
       this.mateTarget = mate;
+      this.setMoveTarget(map, Math.round(mate.x), Math.round(mate.y), 'approach_mate');
     }
   }
 
   seekProductiveTask(map, humans = [], animals = []) {
     if (this.role.includes('Sadhu')) {
-      this.targetX = CAMP_CENTER.x;
-      this.targetY = CAMP_CENTER.y;
-      this.state = 'moving';
-      this.actionIntent = 'bless_camp';
+      this.setMoveTarget(map, CAMP_CENTER.x, CAMP_CENTER.y, 'bless_camp');
       return;
     }
 
@@ -436,20 +461,14 @@ export class Human {
     const fireExists = (fireTile && fireTile.type === 'fire' && (fireTile.fire?.intensity > 15 || fireState.intensity > 15));
 
     if (!fireExists && campfireStock.wood > 0) {
-      this.targetX = CAMP_CENTER.x;
-      this.targetY = CAMP_CENTER.y;
-      this.state = 'moving';
-      this.actionIntent = 'rekindle_fire';
+      this.setMoveTarget(map, CAMP_CENTER.x, CAMP_CENTER.y, 'rekindle_fire');
       return;
     }
 
     // Wenn Feuer brennt, aber schwach wird (< 50%): Nachlegen
     const currentIntensity = (fireTile && fireTile.fire) ? fireTile.fire.intensity : fireState.intensity;
     if (currentIntensity < 50 && campfireStock.wood > 0) {
-      this.targetX = CAMP_CENTER.x;
-      this.targetY = CAMP_CENTER.y;
-      this.state = 'moving';
-      this.actionIntent = 'stoke_fire';
+      this.setMoveTarget(map, CAMP_CENTER.x, CAMP_CENTER.y, 'stoke_fire');
       return;
     }
 
@@ -472,10 +491,7 @@ export class Human {
     }
 
     if (damagedShelter && campfireStock.wood >= 1) {
-      this.targetX = damagedShelter.x;
-      this.targetY = damagedShelter.y;
-      this.state = 'moving';
-      this.actionIntent = 'repair_shelter';
+      this.setMoveTarget(map, damagedShelter.x, damagedShelter.y, 'repair_shelter');
       return;
     }
 
@@ -489,10 +505,7 @@ export class Human {
       if (campfireStock.wood >= 2 && campfireStock.stone >= 1) {
         const freeSpot = this.findFreeShelterSpot(map, humans);
         if (freeSpot) {
-          this.targetX = freeSpot.x;
-          this.targetY = freeSpot.y;
-          this.state = 'moving';
-          this.actionIntent = 'build_shelter';
+          this.setMoveTarget(map, freeSpot.x, freeSpot.y, 'build_shelter');
           return;
         }
       }
@@ -502,10 +515,7 @@ export class Human {
     if (campfireStock.stone < 3) {
       const rock = this.findNearestTile(map, 'rock');
       if (rock) {
-        this.targetX = rock.x;
-        this.targetY = rock.y;
-        this.state = 'moving';
-        this.actionIntent = 'mine_rock';
+        this.setMoveTarget(map, rock.x, rock.y, 'mine_rock');
         return;
       }
     }
@@ -514,10 +524,7 @@ export class Human {
     if (campfireStock.wood < 5) {
       let tree = this.findNearestAdultTree(map);
       if (tree) {
-        this.targetX = tree.x;
-        this.targetY = tree.y;
-        this.state = 'moving';
-        this.actionIntent = 'chop_tree';
+        this.setMoveTarget(map, tree.x, tree.y, 'chop_tree');
         return;
       }
     }
@@ -525,10 +532,7 @@ export class Human {
     if (campfireStock.food < 5) {
       let bush = this.findNearestBushWithBerries(map);
       if (bush) {
-        this.targetX = bush.x;
-        this.targetY = bush.y;
-        this.state = 'moving';
-        this.actionIntent = 'haul_food';
+        this.setMoveTarget(map, bush.x, bush.y, 'haul_food');
         return;
       }
     }
@@ -555,10 +559,7 @@ export class Human {
         }
       }
       if (shoreTile) {
-        this.targetX = shoreTile.x;
-        this.targetY = shoreTile.y;
-        this.state = 'moving';
-        this.actionIntent = 'haul_water';
+        this.setMoveTarget(map, shoreTile.x, shoreTile.y, 'haul_water');
         return;
       }
     }
@@ -569,11 +570,8 @@ export class Human {
   wander(map) {
     const rx = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(this.x + (Math.random() * 4 - 2))));
     const ry = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(this.y + (Math.random() * 4 - 2))));
-    if (map[ry] && map[ry][rx] && map[ry][rx].type !== 'water') {
-      this.targetX = rx;
-      this.targetY = ry;
-      this.state = 'moving';
-      this.actionIntent = 'idle';
+    if (map[ry] && map[ry][rx] && (map[ry][rx].type !== 'water' || map[ry][rx].isFord)) {
+      this.setMoveTarget(map, rx, ry, 'idle');
     }
   }
 
@@ -630,19 +628,13 @@ export class Human {
       if (tile && tile.plant && tile.plant.berries > 0) {
         tile.plant.berries--;
         this.carried = '🍇 Beeren';
-        this.targetX = CAMP_CENTER.x;
-        this.targetY = CAMP_CENTER.y;
-        this.state = 'moving';
-        this.actionIntent = 'deliver_stock';
+        this.setMoveTarget(map, CAMP_CENTER.x, CAMP_CENTER.y, 'deliver_stock');
       } else {
         this.state = 'idle';
       }
     } else if (this.actionIntent === 'haul_water') {
       this.carried = '💧 Wasser';
-      this.targetX = CAMP_CENTER.x;
-      this.targetY = CAMP_CENTER.y;
-      this.state = 'moving';
-      this.actionIntent = 'deliver_stock';
+      this.setMoveTarget(map, CAMP_CENTER.x, CAMP_CENTER.y, 'deliver_stock');
     } else if (this.actionIntent === 'build_shelter') {
       this.state = 'building';
       this.stateTimer = 6.0;
@@ -743,10 +735,7 @@ export class Human {
       if (this.huntTarget) {
         this.huntTarget.isAlive = false;
         this.carried = '🥩 Wildbret';
-        this.targetX = CAMP_CENTER.x;
-        this.targetY = CAMP_CENTER.y;
-        this.state = 'moving';
-        this.actionIntent = 'deliver_stock';
+        this.setMoveTarget(map, CAMP_CENTER.x, CAMP_CENTER.y, 'deliver_stock');
         logEvent(`🏹 ${this.name} hat den Ur-Hirsch erlegt! Er trägt das Fleisch ins Lager.`);
         return;
       }
@@ -764,10 +753,7 @@ export class Human {
       this.needs.food = 100;
     } else if (this.state === 'mining') {
       this.carried = '🪨 Stein';
-      this.targetX = CAMP_CENTER.x;
-      this.targetY = CAMP_CENTER.y;
-      this.state = 'moving';
-      this.actionIntent = 'deliver_stock';
+      this.setMoveTarget(map, CAMP_CENTER.x, CAMP_CENTER.y, 'deliver_stock');
       return;
     } else if (this.state === 'chopping') {
       const gx = Math.round(this.x);
@@ -794,10 +780,7 @@ export class Human {
         }
       }
       this.carried = '🪵 Holz';
-      this.targetX = CAMP_CENTER.x;
-      this.targetY = CAMP_CENTER.y;
-      this.state = 'moving';
-      this.actionIntent = 'deliver_stock';
+      this.setMoveTarget(map, CAMP_CENTER.x, CAMP_CENTER.y, 'deliver_stock');
       return;
     } else if (this.state === 'building') {
       campfireStock.stone = Math.max(0, campfireStock.stone - 1);
@@ -975,7 +958,7 @@ export class Human {
 
 // Zuzug fremder Hominiden (Genfluss & demografischer Ausgleich)
 // Zieht gezielt das fehlende Geschlecht an, um Männchen-/Weibchen-Überschuss auszugleichen
-export function maybeSpawnForeignWanderer(humans, logEvent) {
+export function maybeSpawnForeignWanderer(humans, logEvent, map = null) {
   const livingHumans = humans.filter(h => h.isAlive);
   if (livingHumans.length === 0) return; // Tal der Toten: Niemand zieht hierher
 
@@ -997,8 +980,17 @@ export function maybeSpawnForeignWanderer(humans, logEvent) {
 
   const pool = spawnGender === 'm' ? MALE_NAMES : FEMALE_NAMES;
   const name = pool[Math.floor(Math.random() * pool.length)];
-  const edgeX = Math.random() < 0.5 ? 1 : MAP_SIZE - 2;
-  const edgeY = Math.floor(Math.random() * (MAP_SIZE - 4)) + 2;
+  let edgeX = Math.random() < 0.5 ? 1 : MAP_SIZE - 2;
+  let edgeY = Math.floor(Math.random() * (MAP_SIZE - 4)) + 2;
+
+  if (map && !isTileWalkable(map, edgeX, edgeY)) {
+    for (let tryY = 1; tryY < MAP_SIZE - 1; tryY++) {
+      if (isTileWalkable(map, edgeX, tryY)) {
+        edgeY = tryY;
+        break;
+      }
+    }
+  }
 
   const role = spawnGender === 'm' ? 'Wanderer (Neuer Jäger)' : 'Wanderin (Neue DNA)';
   const tint = spawnGender === 'm' ? '#d97706' : '#10b981';

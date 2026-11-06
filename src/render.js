@@ -1,4 +1,4 @@
-import { TILE_W, TILE_H, MAP_SIZE, CAMP_CENTER } from './config.js?v=7';
+import { TILE_W, TILE_H, MAP_SIZE, CAMP_CENTER } from './config.js?v=8';
 
 export class Renderer {
   constructor(ctx, camera) {

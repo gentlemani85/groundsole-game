@@ -1,9 +1,9 @@
-import { MAP_SIZE, campfireStock, CAMP_CENTER, fireState } from './config.js?v=7';
-import { Camera } from './isometric.js?v=7';
-import { createMap, updateEcology } from './map.js?v=7';
-import { Renderer } from './render.js?v=7';
-import { createInitialHumans, maybeSpawnForeignWanderer } from './human.js?v=7';
-import { maybeSpawnWildAnimal } from './wildlife.js?v=7';
+import { MAP_SIZE, campfireStock, CAMP_CENTER, fireState } from './config.js?v=8';
+import { Camera } from './isometric.js?v=8';
+import { createMap, updateEcology } from './map.js?v=8';
+import { Renderer } from './render.js?v=8';
+import { createInitialHumans, maybeSpawnForeignWanderer } from './human.js?v=8';
+import { maybeSpawnWildAnimal } from './wildlife.js?v=8';
 
 // Setup DOM
 const canvas = document.getElementById('game-canvas');
@@ -211,9 +211,11 @@ function applyToolAtScreen(sx, sy) {
       logEvent(`🔥 Autarke Feuerstelle platziert bei [${grid.x}, ${grid.y}].`);
     } else if (activeTool === 'water') {
       tile.type = 'water';
+      tile.isFord = false;
       tile.plant = null;
     } else if (activeTool === 'path') {
       tile.type = 'path';
+      tile.isFord = false;
       tile.plant = null;
     } else if (activeTool === 'grass') {
       tile.type = 'grass';
@@ -266,7 +268,7 @@ function loop(now) {
   }
 
   // 3. Fremde Wanderer (Genpool / Female Dispersal)
-  maybeSpawnForeignWanderer(humans, logEvent);
+  maybeSpawnForeignWanderer(humans, logEvent, map);
 
   // 4. Hominiden
   for (const h of humans) {
