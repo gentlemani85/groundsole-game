@@ -30,31 +30,31 @@ export function computeEcologicalPressure(map, humans, animals, campfireStock, f
   const livingHumans = humans.filter(h => h.isAlive);
   if (livingHumans.length === 0) return 0;
 
-  // 1. Feuer-Kälte & Erlöschen (max. 30 Punkte)
+  // 1. Feuer-Kälte & Erlöschen (max. 35 Punkte)
   // Das Lagerfeuer ist das Herz des Acheuléen-Clans (Wärme, Schutz, Braten).
   let fireScore = 0;
   const currentFire = (fireState && typeof fireState.intensity === 'number') ? fireState.intensity : 100;
   if (currentFire <= 0) {
-    fireScore = 30; // Feuer völlig erloschen! Bedrohliche Kälte und Dunkelheit.
-  } else if (currentFire < 40) {
-    fireScore = Math.round(((40 - currentFire) / 40) * 30);
+    fireScore = 35; // Feuer völlig erloschen! Tödliche Kälte und Raubtiergefahr.
+  } else if (currentFire < 35) {
+    fireScore = Math.round(((35 - currentFire) / 35) * 35);
   }
 
-  // 2. Akuter Hunger im Stamm (max. 35 Punkte)
+  // 2. Akuter Hunger im Stamm (max. 30 Punkte)
   const hungryCount = livingHumans.filter(h => h.needs.food < 45).length;
   const starvingCount = livingHumans.filter(h => h.needs.food < 25).length;
   const hungerSeverity = (hungryCount * 0.5 + starvingCount * 0.5) / livingHumans.length;
-  const hungerScore = Math.min(35, Math.round(hungerSeverity * 35));
+  const hungerScore = Math.min(30, Math.round(hungerSeverity * 30));
 
   // 3. Lager-Leere am Feuer (max. 25 Punkte)
   let stockScore = 0;
-  if (campfireStock.wood === 0) stockScore += 12; // Kein Brennholz am Lager!
+  if (campfireStock.wood === 0) stockScore += 13; // Kein Brennholz am Lager!
   else if (campfireStock.wood <= 1) stockScore += 6;
 
-  if (campfireStock.food === 0) stockScore += 13; // Keine Nahrung am Lager!
-  else if (campfireStock.food <= 2) stockScore += 6;
+  if (campfireStock.food === 0) stockScore += 12; // Keine Nahrung am Lager!
+  else if (campfireStock.food <= 2) stockScore += 5;
 
-  // 4. Lokale Ressourcen-Erschöpfung & Hütten-Mangel im Umfeld (Radius 7) (max. 40 Punkte)
+  // 4. Karge Lager-Lichtung (eng gefasster Radius 4.5 Kacheln) & Hütten-Mangel
   let localBerries = 0;
   let localTrees = 0;
   let localFish = 0;
@@ -63,7 +63,7 @@ export function computeEcologicalPressure(map, humans, animals, campfireStock, f
   for (let y = 0; y < MAP_SIZE; y++) {
     for (let x = 0; x < MAP_SIZE; x++) {
       const dist = Math.hypot(x - CAMP_CENTER.x, y - CAMP_CENTER.y);
-      if (dist <= 7.0) {
+      if (dist <= 4.5) {
         const t = map[y][x];
         if (t.plant) {
           if (t.plant.type === 'bush' && !t.plant.isRootstock) {
@@ -85,20 +85,21 @@ export function computeEcologicalPressure(map, humans, animals, campfireStock, f
   // Schutzhütten-Not: Ohne Hütte ist der Stamm Wind und Wetter schutzlos ausgeliefert
   let shelterScore = 0;
   if (localShelters === 0) {
-    shelterScore = 20; // Keine einzige Schutzhütte mehr im Lager!
+    shelterScore = 25; // Keine einzige Schutzhütte mehr im Lager!
   } else if (localShelters === 1) {
-    shelterScore = 8;
+    shelterScore = 10;
   }
 
+  // Kahl geschlagene Nahzone
   let localDepletionScore = 0;
-  if (localTrees === 0) localDepletionScore += 10;
-  else if (localTrees <= 2) localDepletionScore += 5;
+  if (localTrees === 0) localDepletionScore += 15; // Alle Bäume in der Lager-Lichtung gefällt!
+  else if (localTrees <= 1) localDepletionScore += 8;
 
-  if (localBerries === 0) localDepletionScore += 8;
-  else if (localBerries <= 2) localDepletionScore += 4;
+  if (localBerries === 0) localDepletionScore += 10; // Alle Beeren in Lagernähe abgeerntet!
+  else if (localBerries <= 2) localDepletionScore += 5;
 
-  if (localFish === 0) localDepletionScore += 7;
-  else if (localFish <= 2) localDepletionScore += 3;
+  if (localFish === 0) localDepletionScore += 5;
+  else if (localFish <= 1) localDepletionScore += 2;
 
   const totalPressure = Math.min(100, fireScore + shelterScore + stockScore + localDepletionScore + hungerScore);
 
