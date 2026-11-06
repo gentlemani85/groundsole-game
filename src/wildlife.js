@@ -1,4 +1,4 @@
-import { MAP_SIZE, campfireStock } from './config.js?v=4';
+import { MAP_SIZE, campfireStock } from './config.js?v=5';
 
 let nextAnimalId = 1;
 

@@ -1,4 +1,4 @@
-import { campfireStock, fireState, MAP_SIZE, CAMP_CENTER, SHELTER_CONFIG } from './config.js?v=4';
+import { campfireStock, fireState, MAP_SIZE, CAMP_CENTER, SHELTER_CONFIG } from './config.js?v=5';
 
 let nextId = 4;
 
@@ -76,8 +76,11 @@ export class Human {
       coldPenalty = inShelter ? 1.25 : 1.65; // Hütte schützt vor Windfrost, heizt aber nicht!
     }
 
-    this.needs.water = Math.max(0, this.needs.water - dt * 0.75);
-    this.needs.food = Math.max(0, this.needs.food - dt * (0.45 * coldPenalty));
+    // Kinder verbrauchen biophysikalisch weniger Kalorien & Wasser als schwere Erwachsene
+    const bodyScale = this.ageYears < 13 ? 0.55 : 1.0;
+
+    this.needs.water = Math.max(0, this.needs.water - dt * (0.75 * bodyScale));
+    this.needs.food = Math.max(0, this.needs.food - dt * (0.45 * coldPenalty * bodyScale));
     this.needs.energy = Math.max(0, this.needs.energy - dt * (0.25 * coldPenalty));
     this.needs.bladder = Math.min(100, this.needs.bladder + dt * 0.8);
 
@@ -86,9 +89,9 @@ export class Human {
       this.nursingTimer -= dt;
     }
 
-    // Paarungstrieb
-    if (this.ageYears >= 15 && this.ageYears <= 48 && this.needs.water > 45 && this.needs.food > 45 && this.nursingTimer <= 0) {
-      this.needs.libido = Math.min(100, this.needs.libido + dt * 1.6);
+    // Paarungstrieb (Geschlechtsreife ab 13 Jahren im Paläolithikum)
+    if (this.ageYears >= 13 && this.ageYears <= 48 && this.needs.water > 40 && this.needs.food > 40 && this.nursingTimer <= 0) {
+      this.needs.libido = Math.min(100, this.needs.libido + dt * 2.2);
     } else {
       this.needs.libido = Math.max(0, this.needs.libido - dt * 0.5);
     }
@@ -116,12 +119,12 @@ export class Human {
       else if (this.role.includes('Jäger') && animals.length > 0) {
         this.seekHunt(animals);
       }
-      // Fortpflanzung
-      else if (this.needs.libido > 65 && this.gender === 'm') {
+      // Fortpflanzung (ab 50% Libido)
+      else if (this.needs.libido > 50 && this.gender === 'm') {
         this.seekMate(humans);
       } 
       // Nutzen & Lager-Aufbau
-      else if (this.needs.water > 60 && this.needs.food > 60) {
+      else if (this.needs.water > 55 && this.needs.food > 55) {
         this.seekProductiveTask(map, humans, animals);
       } else {
         this.wander(map);
@@ -164,12 +167,12 @@ export class Human {
           return;
         }
 
-        // Wenn Jäger entkräftet ist (< 15% Energie): Jagd abbrechen
-        if (this.needs.energy < 15) {
+        // Überlebenssicherung: Wenn Jäger entkräftet ist oder Hunger/Durst droht, Jagd abbrechen!
+        if (this.needs.energy < 18 || this.needs.food < 28 || this.needs.water < 28) {
           this.state = 'idle';
           this.actionIntent = 'idle';
           this.huntTarget = null;
-          logEvent(`😮‍💨 ${this.name} muss die Hetzjagd vor Erschöpfung abbrechen.`);
+          logEvent(`😮‍💨 ${this.name} bricht die Jagd rechtzeitig ab, um nicht zu entkräften.`);
           return;
         }
       }
@@ -378,7 +381,15 @@ export class Human {
   }
 
   seekMate(humans) {
-    const mate = humans.find(h => h.isAlive && h.gender === 'f' && h.ageYears >= 15 && h.ageYears <= 48 && h.pregnancyTimer === 0 && h.nursingTimer <= 0 && h.needs.libido > 40);
+    const mate = humans.find(h => (
+      h.isAlive && 
+      h.gender === 'f' && 
+      h.ageYears >= 13 && 
+      h.ageYears <= 48 && 
+      h.pregnancyTimer === 0 && 
+      h.nursingTimer <= 0 && 
+      h.needs.libido > 25
+    ));
     if (mate) {
       this.targetX = Math.round(mate.x);
       this.targetY = Math.round(mate.y);
@@ -775,27 +786,36 @@ export class Human {
     } else if (this.state === 'mating') {
       this.needs.libido = 0;
       if (this.gender === 'f') {
-        this.pregnancyTimer = 22.0;
+        this.pregnancyTimer = 14.0;
         logEvent(`❤️ ${this.name} erwartet Nachwuchs.`);
       } else if (this.mateTarget) {
         this.mateTarget.needs.libido = 0;
-        this.mateTarget.pregnancyTimer = 22.0;
+        this.mateTarget.pregnancyTimer = 14.0;
       }
     }
     this.state = 'idle';
   }
 
   giveBirth(humans, logEvent) {
-    const babyGender = Math.random() < 0.5 ? 'm' : 'f';
+    // Fisherian Sex Ratio: Ausgleichende Geburtenrate zur Vermeidung von Geschlechter-Extremen
+    const living = humans.filter(h => h.isAlive);
+    const mCount = living.filter(h => h.gender === 'm').length;
+    const fCount = living.filter(h => h.gender === 'f').length;
+
+    let boyChance = 0.5;
+    if (mCount < fCount) boyChance = 0.65;
+    else if (fCount < mCount) boyChance = 0.35;
+
+    const babyGender = Math.random() < boyChance ? 'm' : 'f';
     const pool = babyGender === 'm' ? MALE_NAMES : FEMALE_NAMES;
     const babyName = pool[Math.floor(Math.random() * pool.length)];
     const babyTint = babyGender === 'm' ? '#ea580c' : '#0ea5e9';
 
-    this.nursingTimer = 18.0;
+    this.nursingTimer = 10.0;
 
     const baby = new Human(nextId++, babyName, babyGender, 'Kind / Nachwuchs', CAMP_CENTER.x, CAMP_CENTER.y, babyTint, 0.5);
     humans.push(baby);
-    logEvent(`👶 Geburt! Kind ${babyName} erweitert den Klan.`);
+    logEvent(`👶 Geburt! ${babyGender === 'm' ? 'Junge' : 'Mädchen'} ${babyName} erweitert den Klan.`);
   }
 
   findNearestTile(map, type) {
@@ -915,35 +935,46 @@ export class Human {
   }
 }
 
-// Spawnt nur dann eine fremde Frau, wenn der Clan lebt, mindestens 1 erwachsener Mann da ist
-// und kein dramatischer Frauenüberschuss herrscht!
+// Zuzug fremder Hominiden (Genfluss & demografischer Ausgleich)
+// Zieht gezielt das fehlende Geschlecht an, um Männchen-/Weibchen-Überschuss auszugleichen
 export function maybeSpawnForeignWanderer(humans, logEvent) {
   const livingHumans = humans.filter(h => h.isAlive);
-  if (livingHumans.length === 0) return; // Tal der Toten: Niemand zieht hierher!
+  if (livingHumans.length === 0) return; // Tal der Toten: Niemand zieht hierher
 
-  const livingMales = livingHumans.filter(h => h.gender === 'm' && h.ageYears >= 15);
-  const livingFemales = livingHumans.filter(h => h.gender === 'f');
+  // Maximale Tragfähigkeit des Tals (~13 Personen)
+  if (livingHumans.length >= 13 || Math.random() > 0.0035) return;
 
-  // Wenn keine Männer mehr leben oder schon deutlicher Frauenüberhang da ist: KEIN Zuzug!
-  if (livingMales.length === 0 || livingFemales.length >= livingMales.length * 2) {
-    return;
+  const livingMales = livingHumans.filter(h => h.gender === 'm' && h.ageYears >= 13);
+  const livingFemales = livingHumans.filter(h => h.gender === 'f' && h.ageYears >= 13);
+
+  // Demografische Balance: Wer fehlt im Klan?
+  let spawnGender = 'f';
+  if (livingMales.length < livingFemales.length) {
+    spawnGender = 'm'; // Männer-Mangel: Ein junger Jäger zieht zu!
+  } else if (livingFemales.length < livingMales.length) {
+    spawnGender = 'f'; // Frauen-Mangel: Eine junge Sammlerin zieht zu!
+  } else {
+    spawnGender = Math.random() < 0.5 ? 'm' : 'f';
   }
 
-  if (livingHumans.length >= 12 || Math.random() > 0.002) return;
-
-  const name = FEMALE_NAMES[Math.floor(Math.random() * FEMALE_NAMES.length)];
+  const pool = spawnGender === 'm' ? MALE_NAMES : FEMALE_NAMES;
+  const name = pool[Math.floor(Math.random() * pool.length)];
   const edgeX = Math.random() < 0.5 ? 1 : MAP_SIZE - 2;
   const edgeY = Math.floor(Math.random() * (MAP_SIZE - 4)) + 2;
 
-  const wanderer = new Human(nextId++, name, 'f', 'Wanderin (Neue DNA)', edgeX, edgeY, '#10b981', 18 + Math.floor(Math.random() * 6));
+  const role = spawnGender === 'm' ? 'Wanderer (Neuer Jäger)' : 'Wanderin (Neue DNA)';
+  const tint = spawnGender === 'm' ? '#d97706' : '#10b981';
+
+  const wanderer = new Human(nextId++, name, spawnGender, role, edgeX, edgeY, tint, 18 + Math.floor(Math.random() * 5));
   humans.push(wanderer);
-  logEvent(`🚶‍♀️ Eine wandernde Hominidin (${name}, ${Math.floor(wanderer.ageYears)} J.) schließt sich dem Lager an! Neue Gene.`);
+  logEvent(`🚶 ${spawnGender === 'm' ? 'Ein wandernder Jäger' : 'Eine wandernde Sammlerin'} (${name}, ${Math.floor(wanderer.ageYears)} J.) schließt sich dem Klan an!`);
 }
 
 export function createInitialHumans() {
   return [
-    new Human(1, 'Einar', 'm', 'Jäger / Steinklopfer', CAMP_CENTER.x - 1, CAMP_CENTER.y - 1, '#d97706', 24),
-    new Human(2, 'Halla', 'f', 'Sammlerin & Hüterin', CAMP_CENTER.x, CAMP_CENTER.y + 1, '#0284c7', 21),
-    new Human(3, 'Bruder Mohan', 'm', 'Sadhu / Ältester', CAMP_CENTER.x + 1, CAMP_CENTER.y, '#7c3aed', 54)
+    new Human(1, 'Einar', 'm', 'Jäger / Steinklopfer', CAMP_CENTER.x - 1, CAMP_CENTER.y - 1, '#d97706', 22),
+    new Human(2, 'Halla', 'f', 'Sammlerin & Hüterin', CAMP_CENTER.x, CAMP_CENTER.y + 1, '#0284c7', 20),
+    new Human(3, 'Bruder Mohan', 'm', 'Sadhu / Ältester', CAMP_CENTER.x + 1, CAMP_CENTER.y, '#7c3aed', 50),
+    new Human(4, 'Sula', 'f', 'Junge Sammlerin', CAMP_CENTER.x - 1, CAMP_CENTER.y + 1, '#10b981', 18)
   ];
 }
