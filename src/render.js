@@ -43,7 +43,14 @@ export class Renderer {
       for (let x = 0; x < MAP_SIZE; x++) {
         const tile = map[y][x];
         if (tile.type === 'rock') {
-          depthItems.push({ type: 'rock', x, y, sortKey: x + y + 0.1 });
+          depthItems.push({
+            type: 'rock',
+            x,
+            y,
+            stoneStock: tile.stoneStock,
+            maxStoneStock: tile.maxStoneStock,
+            sortKey: x + y + 0.1
+          });
         } else if (tile.type === 'shelter') {
           depthItems.push({ type: 'shelter', x, y, shelter: tile.shelter, sortKey: x + y + 0.15 });
         } else if (tile.type === 'fire') {
@@ -72,7 +79,7 @@ export class Renderer {
     for (const item of depthItems) {
       if (item.type === 'rock') {
         const pos = this.cam.gridToScreen(item.x, item.y);
-        this.drawNaturalRock(pos.x, pos.y + (TILE_H / 2) * this.cam.zoom, item.x, item.y);
+        this.drawNaturalRock(pos.x, pos.y + (TILE_H / 2) * this.cam.zoom, item.x, item.y, item.stoneStock, item.maxStoneStock);
       } else if (item.type === 'shelter') {
         const pos = this.cam.gridToScreen(item.x, item.y);
         this.drawPrimitiveShelter(pos.x, pos.y + (TILE_H / 2) * this.cam.zoom, item.shelter);
@@ -440,15 +447,19 @@ export class Renderer {
     ctx.restore();
   }
 
-  // Stark verbesserte, plastische Naturfels-Grafik mit Koordinaten-Variation & Biom-Gestein
-  drawNaturalRock(cx, cy, gx = 0, gy = 0) {
+  // Stark verbesserte, plastische Naturfels-Grafik mit Koordinaten-Variation & Schrumpfung beim Abbau
+  drawNaturalRock(cx, cy, gx = 0, gy = 0, stoneStock = 8, maxStoneStock = 8) {
     const ctx = this.ctx;
     const zoom = this.cam.zoom;
     ctx.save();
 
     // Determinismus aus Kachelposition
     const r = Math.abs(Math.sin(gx * 12.9898 + gy * 78.233));
-    const rScale = 0.85 + r * 0.3;
+    // Sichtbare Schrumpfung: Fels wird beim Abbau kontinuierlich kleiner & flacher
+    const stockRatio = (typeof stoneStock === 'number' && maxStoneStock > 0)
+      ? Math.max(0.35, stoneStock / maxStoneStock)
+      : 1.0;
+    const rScale = (0.85 + r * 0.3) * (0.45 + stockRatio * 0.55);
     const w = 9 * rScale * zoom;
     const h = 8 * rScale * zoom;
 
@@ -768,10 +779,29 @@ export class Renderer {
     const ctx = this.ctx;
     const zoom = this.cam.zoom;
     const pos = this.cam.gridToScreen(a.x, a.y);
-    const cx = pos.x;
-    const cy = pos.y + (TILE_H / 2) * zoom;
+    const screenCx = pos.x;
+    const screenCy = pos.y + (TILE_H / 2) * zoom;
 
     ctx.save();
+    ctx.translate(screenCx, screenCy);
+
+    // Laufrichtung erkennen (kein Rückwärtslaufen / Moonwalk):
+    // In Isometrie berechnet sich die horizontale Bildschirmbewegung aus: (targetX - targetY) - (x - y)
+    const screenMoveDx = (a.targetX - a.x) - (a.targetY - a.y);
+    if (screenMoveDx < -0.05) {
+      a.facingLeft = true;
+    } else if (screenMoveDx > 0.05) {
+      a.facingLeft = false;
+    }
+
+    // Wenn nach links gewandt, gesamten Tierkörper horizontal spiegeln
+    if (a.facingLeft) {
+      ctx.scale(-1, 1);
+    }
+
+    const cx = 0;
+    const cy = 0;
+
     const species = a.species || 'deer';
     const isFleeing = (a.state === 'fleeing');
     const isMoving = (a.state === 'moving');

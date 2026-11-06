@@ -1042,6 +1042,21 @@ export class Human {
     } else if (this.state === 'foraging') {
       this.needs.food = 100;
     } else if (this.state === 'mining') {
+      const gx = Math.round(this.x);
+      const gy = Math.round(this.y);
+      const t = map[gy] && map[gy][gx];
+      if (t && t.type === 'rock') {
+        if (typeof t.stoneStock !== 'number') {
+          t.stoneStock = 8;
+          t.maxStoneStock = 8;
+        }
+        t.stoneStock--;
+        if (t.stoneStock <= 0) {
+          t.type = 'grass';
+          t.stoneStock = 0;
+          logEvent(`🪨 Ein Felsen bei [${gx}, ${gy}] ist durch steten Abbau zu Schotter abgetragen.`);
+        }
+      }
       this.carried = '🪨 Stein';
       this.setMoveTarget(map, CAMP_CENTER.x, CAMP_CENTER.y, 'deliver_stock');
       return;

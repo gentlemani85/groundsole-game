@@ -297,6 +297,8 @@
           plant,
           roots,
           shelter,
+          stoneStock: type === "rock" ? 8 : 0,
+          maxStoneStock: type === "rock" ? 8 : 0,
           fishStock: defaultFish,
           maxFishStock: defaultFish,
           fishRegenTimer: 0,
@@ -540,7 +542,14 @@
         for (let x = 0; x < MAP_SIZE; x++) {
           const tile = map2[y][x];
           if (tile.type === "rock") {
-            depthItems.push({ type: "rock", x, y, sortKey: x + y + 0.1 });
+            depthItems.push({
+              type: "rock",
+              x,
+              y,
+              stoneStock: tile.stoneStock,
+              maxStoneStock: tile.maxStoneStock,
+              sortKey: x + y + 0.1
+            });
           } else if (tile.type === "shelter") {
             depthItems.push({ type: "shelter", x, y, shelter: tile.shelter, sortKey: x + y + 0.15 });
           } else if (tile.type === "fire") {
@@ -563,7 +572,7 @@
       for (const item of depthItems) {
         if (item.type === "rock") {
           const pos = this.cam.gridToScreen(item.x, item.y);
-          this.drawNaturalRock(pos.x, pos.y + TILE_H / 2 * this.cam.zoom, item.x, item.y);
+          this.drawNaturalRock(pos.x, pos.y + TILE_H / 2 * this.cam.zoom, item.x, item.y, item.stoneStock, item.maxStoneStock);
         } else if (item.type === "shelter") {
           const pos = this.cam.gridToScreen(item.x, item.y);
           this.drawPrimitiveShelter(pos.x, pos.y + TILE_H / 2 * this.cam.zoom, item.shelter);
@@ -862,13 +871,14 @@
       }
       ctx2.restore();
     }
-    // Stark verbesserte, plastische Naturfels-Grafik mit Koordinaten-Variation & Biom-Gestein
-    drawNaturalRock(cx, cy, gx = 0, gy = 0) {
+    // Stark verbesserte, plastische Naturfels-Grafik mit Koordinaten-Variation & Schrumpfung beim Abbau
+    drawNaturalRock(cx, cy, gx = 0, gy = 0, stoneStock = 8, maxStoneStock = 8) {
       const ctx2 = this.ctx;
       const zoom = this.cam.zoom;
       ctx2.save();
       const r = Math.abs(Math.sin(gx * 12.9898 + gy * 78.233));
-      const rScale = 0.85 + r * 0.3;
+      const stockRatio = typeof stoneStock === "number" && maxStoneStock > 0 ? Math.max(0.35, stoneStock / maxStoneStock) : 1;
+      const rScale = (0.85 + r * 0.3) * (0.45 + stockRatio * 0.55);
       const w = 9 * rScale * zoom;
       const h = 8 * rScale * zoom;
       ctx2.beginPath();
@@ -1117,9 +1127,21 @@
       const ctx2 = this.ctx;
       const zoom = this.cam.zoom;
       const pos = this.cam.gridToScreen(a.x, a.y);
-      const cx = pos.x;
-      const cy = pos.y + TILE_H / 2 * zoom;
+      const screenCx = pos.x;
+      const screenCy = pos.y + TILE_H / 2 * zoom;
       ctx2.save();
+      ctx2.translate(screenCx, screenCy);
+      const screenMoveDx = a.targetX - a.x - (a.targetY - a.y);
+      if (screenMoveDx < -0.05) {
+        a.facingLeft = true;
+      } else if (screenMoveDx > 0.05) {
+        a.facingLeft = false;
+      }
+      if (a.facingLeft) {
+        ctx2.scale(-1, 1);
+      }
+      const cx = 0;
+      const cy = 0;
       const species = a.species || "deer";
       const isFleeing = a.state === "fleeing";
       const isMoving = a.state === "moving";
@@ -2792,6 +2814,21 @@
       } else if (this.state === "foraging") {
         this.needs.food = 100;
       } else if (this.state === "mining") {
+        const gx = Math.round(this.x);
+        const gy = Math.round(this.y);
+        const t = map2[gy] && map2[gy][gx];
+        if (t && t.type === "rock") {
+          if (typeof t.stoneStock !== "number") {
+            t.stoneStock = 8;
+            t.maxStoneStock = 8;
+          }
+          t.stoneStock--;
+          if (t.stoneStock <= 0) {
+            t.type = "grass";
+            t.stoneStock = 0;
+            logEvent2(`\u{1FAA8} Ein Felsen bei [${gx}, ${gy}] ist durch steten Abbau zu Schotter abgetragen.`);
+          }
+        }
         this.carried = "\u{1FAA8} Stein";
         this.setMoveTarget(map2, CAMP_CENTER.x, CAMP_CENTER.y, "deliver_stock");
         return;
@@ -3150,7 +3187,11 @@
     else if (localBerries <= 2) localDepletionScore += 5;
     if (localFish === 0) localDepletionScore += 5;
     else if (localFish <= 1) localDepletionScore += 2;
-    const totalPressure = Math.min(100, fireScore + shelterScore + stockScore + localDepletionScore + hungerScore);
+    let coldTrapScore = 0;
+    if (currentFire <= 0 && campfireStock2.wood === 0 && localTrees === 0) {
+      coldTrapScore = 20;
+    }
+    const totalPressure = Math.min(100, fireScore + shelterScore + stockScore + localDepletionScore + hungerScore + coldTrapScore);
     migrationState.pressure = totalPressure;
     migrationState.pressureDetails = {
       fire: fireScore,
@@ -3158,6 +3199,7 @@
       hunger: hungerScore,
       stock: stockScore,
       localDepletion: localDepletionScore,
+      coldTrap: coldTrapScore,
       localBerries,
       localTrees,
       localFish,
@@ -3189,7 +3231,7 @@
       }
     }
     if (!migrationState.isMigrating) {
-      if (migrationState.pressure >= 88 && Math.random() < 0.05 * dt) {
+      if (migrationState.pressure >= 75 && Math.random() < 0.08 * dt) {
         startMigration(humans2, logEvent2);
       }
       return map2;

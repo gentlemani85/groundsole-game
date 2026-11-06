@@ -267,6 +267,8 @@ export function createMap(biomeId = 'river_valley') {
         plant: plant,
         roots: roots,
         shelter: shelter,
+        stoneStock: (type === 'rock' ? 8 : 0),
+        maxStoneStock: (type === 'rock' ? 8 : 0),
         fishStock: defaultFish,
         maxFishStock: defaultFish,
         fishRegenTimer: 0,

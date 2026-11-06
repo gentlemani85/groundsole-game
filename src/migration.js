@@ -101,7 +101,15 @@ export function computeEcologicalPressure(map, humans, animals, campfireStock, f
   if (localFish === 0) localDepletionScore += 5;
   else if (localFish <= 1) localDepletionScore += 2;
 
-  const totalPressure = Math.min(100, fireScore + shelterScore + stockScore + localDepletionScore + hungerScore);
+  // 5. AKUTE KÄLTEFALLE (Pleistozäne Todesfalle):
+  // Wenn das Feuer erloschen ist UND weder Holz am Lager liegt NOCH Bäume in Lagernähe existieren,
+  // kann das Feuer nie wieder brennen -> Sofortige Kältefalle (+20 Extra-Punkte)
+  let coldTrapScore = 0;
+  if (currentFire <= 0 && campfireStock.wood === 0 && localTrees === 0) {
+    coldTrapScore = 20;
+  }
+
+  const totalPressure = Math.min(100, fireScore + shelterScore + stockScore + localDepletionScore + hungerScore + coldTrapScore);
 
   migrationState.pressure = totalPressure;
   migrationState.pressureDetails = {
@@ -110,6 +118,7 @@ export function computeEcologicalPressure(map, humans, animals, campfireStock, f
     hunger: hungerScore,
     stock: stockScore,
     localDepletion: localDepletionScore,
+    coldTrap: coldTrapScore,
     localBerries,
     localTrees,
     localFish,
@@ -155,8 +164,8 @@ export function updateMigration(dt, map, humans, animals, campfireStock, fireSta
   }
 
   if (!migrationState.isMigrating) {
-    // Automatischer Druck-Trigger: Wenn die Belastung anhaltend extrem ist (>88%)
-    if (migrationState.pressure >= 88 && Math.random() < 0.05 * dt) {
+    // Automatischer Druck-Trigger: Wenn die Belastung anhaltend hoch ist (>= 75%)
+    if (migrationState.pressure >= 75 && Math.random() < 0.08 * dt) {
       startMigration(humans, logEvent);
     }
     return map;
