@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Tier-Grafik Vergleich: Ur-Bison (Option A vs. Option C)</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+    body {
+      background: #0f1115;
+      color: #e5e7eb;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+    }
+    header {
+      text-align: center;
+      max-width: 900px;
+      margin-bottom: 24px;
+    }
+    header h1 {
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: #f3f4f6;
+      margin-bottom: 8px;
+    }
+    header p {
+      color: #9ca3af;
+      font-size: 0.95rem;
+      line-height: 1.5;
+    }
+    .badge {
+      display: inline-block;
+      padding: 3px 10px;
+      background: rgba(59, 130, 246, 0.15);
+      border: 1px solid rgba(59, 130, 246, 0.35);
+      color: #60a5fa;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 12px;
+    }
+    .toolbar {
+      background: #181d24;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 10px 16px;
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      margin-bottom: 24px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    }
+    .tool-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      color: #94a3b8;
+    }
+    .btn-toggle {
+      background: #232932;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #cbd5e1;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.82rem;
+      font-weight: 500;
+      transition: all 0.15s ease;
+    }
+    .btn-toggle:hover {
+      background: #2d3542;
+      color: #fff;
+    }
+    .btn-toggle.active {
+      background: #3b82f6;
+      border-color: #60a5fa;
+      color: #fff;
+      font-weight: 600;
+      box-shadow: 0 0 10px rgba(59, 130, 246, 0.4);
+    }
+    .comparison-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      width: 100%;
+      max-width: 980px;
+      margin-bottom: 30px;
+    }
+    .option-card {
+      background: #15181e;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 16px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+      position: relative;
+      overflow: hidden;
+    }
+    .option-card.recommended {
+      border-color: rgba(59, 130, 246, 0.4);
+    }
+    .card-tag {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      font-size: 0.7rem;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .card-tag.pixel {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.35);
+    }
+    .card-tag.glyph {
+      background: rgba(245, 158, 11, 0.15);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.35);
+    }
+    .option-card h2 {
+      font-size: 1.25rem;
+      color: #f1f5f9;
+      margin-bottom: 4px;
+      align-self: flex-start;
+    }
+    .option-card .subtitle {
+      font-size: 0.82rem;
+      color: #64748b;
+      margin-bottom: 16px;
+      align-self: flex-start;
+    }
+    .canvas-wrapper {
+      width: 100%;
+      height: 280px;
+      background: #0b0d10;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+    canvas {
+      image-rendering: -moz-crisp-edges;
+      image-rendering: -webkit-crisp-edges;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+    .features-list {
+      width: 100%;
+      font-size: 0.85rem;
+      color: #94a3b8;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      padding-top: 12px;
+    }
+    .features-list li {
+      list-style: none;
+      display: flex;
+      gap: 8px;
+    }
+    .features-list li span.icon {
+      color: #3b82f6;
+    }
+    .comparison-table {
+      width: 100%;
+      max-width: 980px;
+      background: #15181e;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 14px;
+      padding: 20px;
+      margin-bottom: 40px;
+    }
+    .comparison-table h3 {
+      font-size: 1.05rem;
+      color: #f3f4f6;
+      margin-bottom: 14px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+    }
+    th, td {
+      padding: 10px 14px;
+      text-align: left;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    th {
+      color: #64748b;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    td.highlight {
+      color: #38bdf8;
+      font-weight: 500;
+    }
+    .back-link {
+      color: #60a5fa;
+      text-decoration: none;
+      font-size: 0.9rem;
+      margin-top: 10px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .back-link:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="badge">Grafik-Entscheidungshilfe</div>
+    <h1>Mittelpleistozäner Ur-Bison (Bison priscus)</h1>
+    <p>Vergleich zweier grundverschiedener Darstellungs-Ansätze direkt auf der isometrischen Kachel des Acheuléen-Dioramas. Beide Varianten sind autark ohne externe Bildlade-Verzögerung.</p>
+    <a href="index.html" class="back-link">← Zurück zum Hauptspiel</a>
+  </header>
+
+  <!-- Interaktive Steuerleiste -->
+  <div class="toolbar">
+    <div class="tool-group">
+      <span>Zoom:</span>
+      <button class="btn-toggle" data-zoom="1">1x (Original)</button>
+      <button class="btn-toggle active" data-zoom="2">2x (Standard)</button>
+      <button class="btn-toggle" data-zoom="4">4x (Groß)</button>
+      <button class="btn-toggle" data-zoom="8">8x (Makro)</button>
+    </div>
+    <div class="tool-group">
+      <span>Hintergrund:</span>
+      <button class="btn-toggle active" data-bg="tile">Diorama-Boden 🌱</button>
+      <button class="btn-toggle" data-bg="dark">Neutral Dunkel 🌑</button>
+    </div>
+    <div class="tool-group">
+      <span>Animation:</span>
+      <button class="btn-toggle active" data-anim="on">Lebendig (Atmen & Gehen) 🐾</button>
+      <button class="btn-toggle" data-anim="off">Standbild ⏸</button>
+    </div>
+  </div>
+
+  <!-- Gegenüberstellung -->
+  <div class="comparison-grid">
+    <!-- OPTION A -->
+    <div class="option-card recommended">
+      <span class="card-tag pixel">Option A</span>
+      <h2>Isometrische Pixel-Art</h2>
+      <div class="subtitle">Klassischer „Siedler / Age of Empires“-Stil (32×32 Matrix)</div>
+      
+      <div class="canvas-wrapper">
+        <canvas id="canvas-opt-a" width="440" height="280"></canvas>
+      </div>
+
+      <ul class="features-list">
+        <li><span class="icon">✓</span> <span><strong>Echte Isometrie:</strong> 3/4-Schrägansicht, fügt sich nahtlos in das Kachelgitter ein.</span></li>
+        <li><span class="icon">✓</span> <span><strong>Anatomische Schärfe:</strong> Gewaltiger Buckel, Zottelmähne, Bernsteingelb-Auge, Stoßhörner mit schwarzen Spitzen.</span></li>
+        <li><span class="icon">✓</span> <span><strong>Kein Verschwimmen:</strong> Crisp Nearest-Neighbor-Rendering auf jedem Bildschirm.</span></li>
+        <li><span class="icon">✓</span> <span><strong>Stil-Einheit:</strong> Wirkt wie ein historisch handgefertigtes Retro-Diorama.</span></li>
+      </ul>
+    </div>
+
+    <!-- OPTION C -->
+    <div class="option-card">
+      <span class="card-tag glyph">Option C</span>
+      <h2>Crisp 2.5D Piktogramm</h2>
+      <div class="subtitle">Gestochen scharfe Vektor-Silhouette mit dynamischem Kontaktschatten</div>
+      
+      <div class="canvas-wrapper">
+        <canvas id="canvas-opt-c" width="440" height="280"></canvas>
+      </div>
+
+      <ul class="features-list">
+        <li><span class="icon">✓</span> <span><strong>Sofortige Identifikation:</strong> Extrem hohe Lesbarkeit auf einen Blick, auch aus weiter Ferne.</span></li>
+        <li><span class="icon">✓</span> <span><strong>Weicher Bodenschatten:</strong> Isometrische Kontakt-Ellipse verankert das Tier im Raum.</span></li>
+        <li><span class="icon">✓</span> <span><strong>Flüssige Skalierung:</strong> Retina-scharf auf allen Auflösungen (vektoriell).</span></li>
+        <li><span class="icon">⚠️</span> <span><strong>Stil-Unterschied:</strong> Wirkt etwas moderner/abstrakter als die detaillierte Pixel-Art.</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Vergleichstabelle -->
+  <div class="comparison-table">
+    <h3>Direkter Merkmals-Vergleich</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Kriterium</th>
+          <th>Option A (Pixel-Art)</th>
+          <th>Option C (2.5D Piktogramm)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="highlight">Wiedererkennung</td>
+          <td>Sehr gut (unverwechselbare Bison-Anatomie & Hörner)</td>
+          <td>Hervorragend (sofortige Glyph-Assoziation)</td>
+        </tr>
+        <tr>
+          <td class="highlight">Spiel-Immersion</td>
+          <td><strong>Hoch</strong> – Erzeugt das Gefühl eines echten Strategiespiel-Klassikers</td>
+          <td>Mittel – Funktional, sauber und minimalistisch</td>
+        </tr>
+        <tr>
+          <td class="highlight">Anpassung an andere Tiere</td>
+          <td>Eigenes 32×32 Sprite für Hase, Wildschwein und Hirsch</td>
+          <td>Eigenes Piktogramm mit individuellen Proportionen</td>
+        </tr>
+        <tr>
+          <td class="highlight">Animationen</td>
+          <td>Sanftes Atmen, Huftraben & Panik-Galopp</td>
+          <td>Elastisches Schritt-Wippen & weicher Atemschatten</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <script>
+    // State
+    let currentZoom = 2;
+    let currentBg = 'tile';
+    let isAnimated = true;
+
+    // Canvases
+    const canvasA = document.getElementById('canvas-opt-a');
+    const ctxA = canvasA.getContext('2d');
+    const canvasC = document.getElementById('canvas-opt-c');
+    const ctxC = canvasC.getContext('2d');
+
+    // Button event listeners
+    document.querySelectorAll('[data-zoom]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('[data-zoom]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentZoom = parseInt(btn.dataset.zoom, 10);
+      });
+    });
+
+    document.querySelectorAll('[data-bg]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('[data-bg]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentBg = btn.dataset.bg;
+      });
+    });
+
+    document.querySelectorAll('[data-anim]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('[data-anim]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        isAnimated = (btn.dataset.anim === 'on');
+      });
+    });
+
+    // -------------------------------------------------------------
+    // OPTION A: 32x32 Pixel Art Matrix (Bison priscus)
+    // -------------------------------------------------------------
+    const BISON_PIXELS = [
+      '................................', // 0
+      '................................', // 1
+      '...................hh.....hh....', // 2 Horn tips (black)
+      '..................hHHh...hHHh...', // 3 Horns (ivory)
+      '..................HHHH...HHHH...', // 4
+      '..................HHHH...HHHH...', // 5
+      '............XXXXX..HHh...hHH....', // 6 Hump top
+      '..........XXMMMMMX..XhhhhX......', // 7 Mane / head join
+      '.........XMMMMMMMMXXDDDDDDX.....', // 8 Head top
+      '........XMMMMMMMMMMXDDDDDDDX....', // 9 Forehead
+      '.......XMMMMMMMMMMMXDEDDDDDDX...', // 10 Amber Eye (E)
+      '......XMMMMMMMMMMMMXDDDDDDNDX...', // 11 Snout (N)
+      '.....XBBMMMMMMMMMMMXDDDDDNDDX...', // 12
+      '....XBBBBMMMMMMMMMMMXDDDDDDX....', // 13 Chin / Beard
+      '...XBBBBBBMMMMMMMMMMMXDDDDX.....', // 14
+      '..XBBBBBBBBMMMMMMMMMMXDDDX......', // 15
+      '.XBBBBBBBBBBMMMMMMMMMXDDX.......', // 16
+      '.XBBBBBBBBBBBBDDDDDDDXXX........', // 17 Belly
+      'XBBBBBBBBBBBBBDDDDDDDX..........', // 18 Flank
+      'XBBBBBBBBBBBBBDDDDDDDX..........', // 19
+      '.XBBBBBBBBBBBBDDDDDDDX..........', // 20
+      '.XBBBBBBBBBBBBDDDDDDDX..........', // 21
+      '..XXXXXBBBBBBDDDDDXXXX..........', // 22 Leg base
+      '..XDDX.XDDX..XDDX.XDDX..........', // 23 4 Legs
+      '..XDDX.XDDX..XDDX.XDDX..........', // 24
+      '..XDDX.XDDX..XDDX.XDDX..........', // 25
+      '..XDDX.XDDX..XDDX.XDDX..........', // 26
+      '..XFFX.XFFX..XFFX.XFFX..........', // 27 Hooves (F)
+      '..XXXX.XXXX..XXXX.XXXX..........', // 28
+      '................................', // 29
+      '................................', // 30
+      '................................'  // 31
+    ];
+
+    const PALETTE = {
+      '.': null,
+      'X': '#110b08', // Black outline
+      'D': '#23140d', // Deep dark brown fur / head / legs
+      'B': '#3c2215', // Main body flank brown
+      'M': '#5c3520', // Warm shaggy hump & mane highlight
+      'H': '#e8dcc4', // Ivory curved horns
+      'h': '#1e1b18', // Horn tips & shadows
+      'E': '#f59e0b', // Golden amber eye
+      'N': '#150d08', // Dark wet snout
+      'F': '#282b30'  // Sturdy slate hooves
+    };
+
+    // Pre-render pixel art to offscreen canvas
+    const offscreenBison = document.createElement('canvas');
+    offscreenBison.width = 32;
+    offscreenBison.height = 32;
+    const offCtx = offscreenBison.getContext('2d');
+
+    for (let r = 0; r < 32; r++) {
+      const row = BISON_PIXELS[r];
+      for (let c = 0; c < 32; c++) {
+        const char = row[c];
+        const color = PALETTE[char];
+        if (color) {
+          offCtx.fillStyle = color;
+          offCtx.fillRect(c, r, 1, 1);
+        }
+      }
+    }
+
+    // Helper: Draw isometric grass tile
+    function drawIsometricTile(ctx, cx, cy, zoom) {
+      const tw = 64 * (zoom >= 4 ? 2.5 : (zoom === 2 ? 1.8 : 1.2));
+      const th = tw / 2;
+
+      ctx.save();
+      // Tile face
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - th / 2);
+      ctx.lineTo(cx + tw / 2, cy);
+      ctx.lineTo(cx, cy + th / 2);
+      ctx.lineTo(cx - tw / 2, cy);
+      ctx.closePath();
+      ctx.fillStyle = '#6b8e23';
+      ctx.fill();
+
+      // Delicate tile border
+      ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // 3D Tile base
+      const depth = 8;
+      ctx.beginPath();
+      ctx.moveTo(cx - tw / 2, cy);
+      ctx.lineTo(cx, cy + th / 2);
+      ctx.lineTo(cx, cy + th / 2 + depth);
+      ctx.lineTo(cx - tw / 2, cy + depth);
+      ctx.closePath();
+      ctx.fillStyle = '#425816';
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.moveTo(cx, cy + th / 2);
+      ctx.lineTo(cx + tw / 2, cy);
+      ctx.lineTo(cx + tw / 2, cy + depth);
+      ctx.lineTo(cx, cy + th / 2 + depth);
+      ctx.closePath();
+      ctx.fillStyle = '#2d3d0f';
+      ctx.fill();
+
+      // Grass specks
+      ctx.fillStyle = '#8cb032';
+      ctx.fillRect(cx - 15, cy - 6, 2, 2);
+      ctx.fillRect(cx + 12, cy - 8, 2, 2);
+      ctx.fillRect(cx - 8, cy + 5, 2, 2);
+      ctx.fillRect(cx + 20, cy + 3, 2, 2);
+
+      ctx.restore();
+    }
+
+    // Helper: Draw subtle drop shadow
+    function drawShadow(ctx, cx, cy, w, h) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, w, h, 0, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.38)';
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Main render loop
+    let lastTime = performance.now();
+
+    function render(now) {
+      const dt = (now - lastTime) / 1000;
+      lastTime = now;
+
+      const t = isAnimated ? (now / 1000) : 0;
+      const breathe = isAnimated ? Math.sin(t * 3.2) * 1.5 : 0;
+      const stepHop = isAnimated ? Math.abs(Math.sin(t * 5.0)) * 2.0 : 0;
+
+      // -------------------------------------------------------------
+      // DRAW OPTION A (Pixel-Art)
+      // -------------------------------------------------------------
+      ctxA.clearRect(0, 0, canvasA.width, canvasA.height);
+      const cxA = canvasA.width / 2;
+      const cyA = canvasA.height / 2 + 30;
+
+      if (currentBg === 'tile') {
+        drawIsometricTile(ctxA, cxA, cyA, currentZoom);
+      }
+
+      // Ground Shadow
+      const shadowW_A = 24 * currentZoom;
+      const shadowH_A = 10 * currentZoom;
+      drawShadow(ctxA, cxA + 2, cyA - 2, shadowW_A, shadowH_A);
+
+      // Pixel Art Bison
+      const scale = currentZoom * 2.2;
+      const drawW = 32 * scale;
+      const drawH = 32 * scale;
+      const drawX = Math.round(cxA - drawW / 2);
+      const drawY = Math.round(cyA - drawH + 8 - stepHop + breathe);
+
+      ctxA.imageSmoothingEnabled = false;
+      ctxA.drawImage(offscreenBison, drawX, drawY, drawW, drawH);
+
+      // Floating Badge
+      ctxA.font = 'bold 11px sans-serif';
+      ctxA.textAlign = 'center';
+      ctxA.fillStyle = '#fef08a';
+      ctxA.fillText('🦬 Ur-Bison (15 Fleisch)', cxA, drawY - 12);
+
+      // -------------------------------------------------------------
+      // DRAW OPTION C (2.5D Piktogramm)
+      // -------------------------------------------------------------
+      ctxC.clearRect(0, 0, canvasC.width, canvasC.height);
+      const cxC = canvasC.width / 2;
+      const cyC = canvasC.height / 2 + 30;
+
+      if (currentBg === 'tile') {
+        drawIsometricTile(ctxC, cxC, cyC, currentZoom);
+      }
+
+      // Ground Shadow
+      const shadowW_C = 26 * currentZoom;
+      const shadowH_C = 11 * currentZoom;
+      drawShadow(ctxC, cxC + 2, cyC - 2, shadowW_C, shadowH_C);
+
+      // 2.5D Vector Glyph
+      ctxC.save();
+      const glyphY = cyC - 12 - stepHop + breathe;
+      const fontSize = Math.round(36 * currentZoom * 1.15);
+
+      ctxC.font = `${fontSize}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
+      ctxC.textAlign = 'center';
+      ctxC.textBaseline = 'middle';
+
+      // Subtle warm rim highlight
+      ctxC.shadowColor = 'rgba(0,0,0,0.45)';
+      ctxC.shadowBlur = 6 * currentZoom;
+      ctxC.shadowOffsetY = 3 * currentZoom;
+
+      ctxC.fillText('🦬', cxC, glyphY);
+      ctxC.restore();
+
+      // Floating Badge
+      ctxC.font = 'bold 11px sans-serif';
+      ctxC.textAlign = 'center';
+      ctxC.fillStyle = '#fef08a';
+      ctxC.fillText('🦬 Ur-Bison (15 Fleisch)', cxC, glyphY - (fontSize * 0.55));
+
+      requestAnimationFrame(render);
+    }
+
+    requestAnimationFrame(render);
+  </script>
+</body>
+</html>

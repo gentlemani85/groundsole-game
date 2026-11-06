@@ -282,7 +282,7 @@ function updateUI() {
   renderOrUpdateCards(humans);
 
   // 4. Ökologischer Druck & Nomadische Migration
-  computeEcologicalPressure(map, humans, animals, campfireStock);
+  computeEcologicalPressure(map, humans, animals, campfireStock, fireState);
   const pressure = migrationState.pressure;
   if (pressureValEl) pressureValEl.innerText = `${pressure}%`;
   if (pressureFillEl) pressureFillEl.style.width = `${pressure}%`;

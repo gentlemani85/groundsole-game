@@ -23,61 +23,98 @@ export const migrationState = {
 
 /**
  * Berechnet den biophysikalischen Druck auf das Tal (0 bis 100%).
+ * Berücksichtigt transparent: Feuer-Status, akuten Hunger, Vorratsleere und
+ * Erschöpfung des direkten Lager-Umfelds (Radius 6.5 Kacheln).
  */
-export function computeEcologicalPressure(map, humans, animals, campfireStock) {
+export function computeEcologicalPressure(map, humans, animals, campfireStock, fireState = null) {
   const livingHumans = humans.filter(h => h.isAlive);
   if (livingHumans.length === 0) return 0;
 
-  // 1. Nahrungsverfügbarkeit
-  let availableBerries = 0;
-  let availableRoots = 0;
-  let adultTrees = 0;
+  // 1. Feuer-Kälte & Erlöschen (max. 25 Punkte)
+  // Das Lagerfeuer ist das Herz des Acheuléen-Clans (Wärme, Schutz, Braten).
+  let fireScore = 0;
+  const currentFire = (fireState && typeof fireState.intensity === 'number') ? fireState.intensity : 100;
+  if (currentFire <= 0) {
+    fireScore = 25; // Feuer völlig erloschen!
+  } else if (currentFire < 35) {
+    fireScore = Math.round(((35 - currentFire) / 35) * 25);
+  }
+
+  // 2. Akuter Hunger im Stamm (max. 35 Punkte)
+  // Rechnet den Anteil hungriger (< 40%) und akut verhungernder (< 20%) Hominiden
+  const hungryCount = livingHumans.filter(h => h.needs.food < 40).length;
+  const starvingCount = livingHumans.filter(h => h.needs.food < 20).length;
+  const hungerSeverity = (hungryCount * 0.5 + starvingCount * 0.5) / livingHumans.length;
+  const hungerScore = Math.min(35, Math.round(hungerSeverity * 35));
+
+  // 3. Lager-Leere am Feuer (max. 20 Punkte)
+  // Wenn Vorräte auf 0 sinken, steigt die Subsistenz-Not
+  let stockScore = 0;
+  if (campfireStock.food === 0) stockScore += 12;
+  else if (campfireStock.food <= 1) stockScore += 6;
+
+  if (campfireStock.wood === 0) stockScore += 8;
+  else if (campfireStock.wood <= 1) stockScore += 4;
+
+  // 4. Lokale Ressourcen-Erschöpfung im direkten Lager-Umfeld (Radius 6.5) (max. 20 Punkte)
+  // Ein Clan zieht weiter, wenn die nähere Umgebung kahl ist – nicht wenn Kacheln am Kartenrand voll sind.
+  let localBerries = 0;
+  let localTrees = 0;
+  let localFish = 0;
+  let localShelters = 0;
 
   for (let y = 0; y < MAP_SIZE; y++) {
     for (let x = 0; x < MAP_SIZE; x++) {
-      const t = map[y][x];
-      if (t.plant) {
-        if (t.plant.type === 'bush' && !t.plant.isRootstock) {
-          availableBerries += (t.plant.berries || 0);
-        } else if (t.plant.type === 'tree' && t.plant.stage === 3) {
-          adultTrees++;
+      const dist = Math.hypot(x - CAMP_CENTER.x, y - CAMP_CENTER.y);
+      if (dist <= 6.5) {
+        const t = map[y][x];
+        if (t.plant) {
+          if (t.plant.type === 'bush' && !t.plant.isRootstock) {
+            localBerries += (t.plant.berries || 0);
+          } else if (t.plant.type === 'tree' && t.plant.stage === 3) {
+            localTrees++;
+          }
+        }
+        if (t.type === 'water' && t.fishStock && t.fishStock > 0) {
+          localFish += t.fishStock;
+        }
+        if (t.type === 'shelter' && t.shelter && t.shelter.condition > 20) {
+          localShelters++;
         }
       }
-      if (t.roots && t.roots > 0) availableRoots += t.roots;
     }
   }
 
-  const livingAnimals = animals.filter(a => a.isAlive).length;
+  let localDepletionScore = 0;
+  if (localBerries === 0) localDepletionScore += 7;
+  else if (localBerries <= 2) localDepletionScore += 3;
 
-  // Hunger-Quote im Clan
-  const hungryCount = livingHumans.filter(h => (100 - h.needs.food) > 60).length;
-  const hungerRatio = hungryCount / livingHumans.length;
+  if (localTrees === 0) localDepletionScore += 7;
+  else if (localTrees <= 2) localDepletionScore += 3;
 
-  // Berechne Teil-Scores (0 - 100)
-  // Wenig Vorrat & Beeren & Knollen
-  const totalFoodScore = Math.max(0, 100 - (campfireStock.food * 12 + availableBerries * 6 + availableRoots * 4 + livingAnimals * 10));
-  // Wenig Holz
-  const woodScore = Math.max(0, 100 - (campfireStock.wood * 10 + adultTrees * 6));
-  // Hunger im Stamm
-  const hungerScore = Math.min(100, Math.round(hungerRatio * 100));
+  if (localFish === 0) localDepletionScore += 6;
+  else if (localFish <= 2) localDepletionScore += 2;
 
-  const weightedPressure = Math.min(100, Math.round(
-    totalFoodScore * 0.45 +
-    hungerScore * 0.40 +
-    woodScore * 0.15
-  ));
+  // Bonus: Mangel an Schutzhütten bei erloschenem Feuer
+  if (localShelters === 0 && currentFire < 20) {
+    localDepletionScore = Math.min(20, localDepletionScore + 5);
+  }
 
-  migrationState.pressure = weightedPressure;
+  const totalPressure = Math.min(100, fireScore + hungerScore + stockScore + localDepletionScore);
+
+  migrationState.pressure = totalPressure;
   migrationState.pressureDetails = {
-    food: totalFoodScore,
+    fire: fireScore,
     hunger: hungerScore,
-    wood: woodScore,
-    berries: availableBerries,
-    trees: adultTrees,
-    animals: livingAnimals
+    stock: stockScore,
+    localDepletion: localDepletionScore,
+    localBerries,
+    localTrees,
+    localFish,
+    localShelters
   };
 
-  return weightedPressure;
+  return totalPressure;
 }
 
 /**

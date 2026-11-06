@@ -2955,44 +2955,73 @@
     announcement: null,
     announcementTimer: 0
   };
-  function computeEcologicalPressure(map2, humans2, animals2, campfireStock2) {
+  function computeEcologicalPressure(map2, humans2, animals2, campfireStock2, fireState2 = null) {
     const livingHumans = humans2.filter((h) => h.isAlive);
     if (livingHumans.length === 0) return 0;
-    let availableBerries = 0;
-    let availableRoots = 0;
-    let adultTrees = 0;
+    let fireScore = 0;
+    const currentFire = fireState2 && typeof fireState2.intensity === "number" ? fireState2.intensity : 100;
+    if (currentFire <= 0) {
+      fireScore = 25;
+    } else if (currentFire < 35) {
+      fireScore = Math.round((35 - currentFire) / 35 * 25);
+    }
+    const hungryCount = livingHumans.filter((h) => h.needs.food < 40).length;
+    const starvingCount = livingHumans.filter((h) => h.needs.food < 20).length;
+    const hungerSeverity = (hungryCount * 0.5 + starvingCount * 0.5) / livingHumans.length;
+    const hungerScore = Math.min(35, Math.round(hungerSeverity * 35));
+    let stockScore = 0;
+    if (campfireStock2.food === 0) stockScore += 12;
+    else if (campfireStock2.food <= 1) stockScore += 6;
+    if (campfireStock2.wood === 0) stockScore += 8;
+    else if (campfireStock2.wood <= 1) stockScore += 4;
+    let localBerries = 0;
+    let localTrees = 0;
+    let localFish = 0;
+    let localShelters = 0;
     for (let y = 0; y < MAP_SIZE; y++) {
       for (let x = 0; x < MAP_SIZE; x++) {
-        const t = map2[y][x];
-        if (t.plant) {
-          if (t.plant.type === "bush" && !t.plant.isRootstock) {
-            availableBerries += t.plant.berries || 0;
-          } else if (t.plant.type === "tree" && t.plant.stage === 3) {
-            adultTrees++;
+        const dist = Math.hypot(x - CAMP_CENTER.x, y - CAMP_CENTER.y);
+        if (dist <= 6.5) {
+          const t = map2[y][x];
+          if (t.plant) {
+            if (t.plant.type === "bush" && !t.plant.isRootstock) {
+              localBerries += t.plant.berries || 0;
+            } else if (t.plant.type === "tree" && t.plant.stage === 3) {
+              localTrees++;
+            }
+          }
+          if (t.type === "water" && t.fishStock && t.fishStock > 0) {
+            localFish += t.fishStock;
+          }
+          if (t.type === "shelter" && t.shelter && t.shelter.condition > 20) {
+            localShelters++;
           }
         }
-        if (t.roots && t.roots > 0) availableRoots += t.roots;
       }
     }
-    const livingAnimals = animals2.filter((a) => a.isAlive).length;
-    const hungryCount = livingHumans.filter((h) => 100 - h.needs.food > 60).length;
-    const hungerRatio = hungryCount / livingHumans.length;
-    const totalFoodScore = Math.max(0, 100 - (campfireStock2.food * 12 + availableBerries * 6 + availableRoots * 4 + livingAnimals * 10));
-    const woodScore = Math.max(0, 100 - (campfireStock2.wood * 10 + adultTrees * 6));
-    const hungerScore = Math.min(100, Math.round(hungerRatio * 100));
-    const weightedPressure = Math.min(100, Math.round(
-      totalFoodScore * 0.45 + hungerScore * 0.4 + woodScore * 0.15
-    ));
-    migrationState.pressure = weightedPressure;
+    let localDepletionScore = 0;
+    if (localBerries === 0) localDepletionScore += 7;
+    else if (localBerries <= 2) localDepletionScore += 3;
+    if (localTrees === 0) localDepletionScore += 7;
+    else if (localTrees <= 2) localDepletionScore += 3;
+    if (localFish === 0) localDepletionScore += 6;
+    else if (localFish <= 2) localDepletionScore += 2;
+    if (localShelters === 0 && currentFire < 20) {
+      localDepletionScore = Math.min(20, localDepletionScore + 5);
+    }
+    const totalPressure = Math.min(100, fireScore + hungerScore + stockScore + localDepletionScore);
+    migrationState.pressure = totalPressure;
     migrationState.pressureDetails = {
-      food: totalFoodScore,
+      fire: fireScore,
       hunger: hungerScore,
-      wood: woodScore,
-      berries: availableBerries,
-      trees: adultTrees,
-      animals: livingAnimals
+      stock: stockScore,
+      localDepletion: localDepletionScore,
+      localBerries,
+      localTrees,
+      localFish,
+      localShelters
     };
-    return weightedPressure;
+    return totalPressure;
   }
   function startMigration(humans2, logEvent2) {
     if (migrationState.isMigrating) return;
@@ -3331,7 +3360,7 @@
     if (demoAgeEl) demoAgeEl.innerText = avgAgeStr;
     if (demoAgeSubEl) demoAgeSubEl.innerText = spanStr;
     renderOrUpdateCards(humans);
-    computeEcologicalPressure(map, humans, animals, campfireStock);
+    computeEcologicalPressure(map, humans, animals, campfireStock, fireState);
     const pressure = migrationState.pressure;
     if (pressureValEl) pressureValEl.innerText = `${pressure}%`;
     if (pressureFillEl) pressureFillEl.style.width = `${pressure}%`;
