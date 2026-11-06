@@ -1,4 +1,4 @@
-import { campfireStock, fireState, MAP_SIZE, CAMP_CENTER, SHELTER_CONFIG } from './config.js';
+import { campfireStock, fireState, MAP_SIZE, CAMP_CENTER, SHELTER_CONFIG } from './config.js?v=4';
 
 let nextId = 4;
 
