@@ -71,6 +71,45 @@
   </div>
 
   <!-- Modularer Einstiegspunkt -->
+  <script>
+    // Automatischer Hinweis, falls Datei direkt per Doppelklick (file://) im Browser geöffnet wird
+    if (window.location.protocol === 'file:') {
+      window.addEventListener('DOMContentLoaded', () => {
+        const vp = document.getElementById('viewport-container');
+        if (vp) {
+          const banner = document.createElement('div');
+          banner.style.position = 'absolute';
+          banner.style.top = '30%';
+          banner.style.left = '50%';
+          banner.style.transform = 'translate(-50%, -50%)';
+          banner.style.background = 'rgba(28, 20, 20, 0.95)';
+          banner.style.border = '2px solid #ef4444';
+          banner.style.borderRadius = '12px';
+          banner.style.padding = '24px';
+          banner.style.maxWidth = '480px';
+          banner.style.color = '#f9fafb';
+          banner.style.zIndex = '9999';
+          banner.style.boxShadow = '0 20px 50px rgba(0,0,0,0.8)';
+          banner.style.textAlign = 'center';
+          banner.style.lineHeight = '1.5';
+          banner.innerHTML = `
+            <div style="font-size: 2rem; margin-bottom: 10px;">⚠️</div>
+            <h2 style="font-size: 1.1rem; margin-bottom: 10px; color: #f87171;">Browser-Sicherheitsblockade (file://)</h2>
+            <p style="font-size: 0.82rem; color: #d1d5db; margin-bottom: 16px;">
+              Moderne Browser verbieten das Laden von modularem JavaScript (ES6-Modulen) über die lokale Dateiansicht (<code>file://</code>).
+            </p>
+            <p style="font-size: 0.85rem; margin-bottom: 18px;">
+              Der lokale Spiel-Server läuft bereits! Bitte öffne das Spiel über diese Adresse:
+            </p>
+            <a href="http://localhost:8080" style="display: inline-block; background: #2563eb; color: #fff; text-decoration: none; padding: 10px 18px; border-radius: 6px; font-weight: 600; font-size: 0.9rem;">
+              👉 http://localhost:8080 öffnen
+            </a>
+          `;
+          vp.appendChild(banner);
+        }
+      });
+    }
+  </script>
   <script type="module" src="src/main.js"></script>
 </body>
 </html>
