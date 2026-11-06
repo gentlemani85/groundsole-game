@@ -449,13 +449,30 @@ export class Human {
     // 3. HÜTTEN-KAPAZITÄT (Max 2 Personen pro Hütte):
     // Braucht der Clan weitere Hütten, weil die Population gewachsen ist?
     const livingClanSize = humans.filter(h => h.isAlive).length;
-    if (totalShelterCapacity < livingClanSize && fireExists && campfireStock.stone >= 2 && campfireStock.wood >= 3) {
-      const freeSpot = this.findFreeShelterSpot(map);
-      if (freeSpot) {
-        this.targetX = freeSpot.x;
-        this.targetY = freeSpot.y;
+    const inConstruction = humans.filter(h => h.isAlive && (h.actionIntent === 'build_shelter' || h.state === 'building')).length;
+    const projectedCapacity = totalShelterCapacity + (inConstruction * SHELTER_CONFIG.capacity);
+
+    if (projectedCapacity < livingClanSize && fireExists) {
+      if (campfireStock.wood >= 2 && campfireStock.stone >= 1) {
+        const freeSpot = this.findFreeShelterSpot(map, humans);
+        if (freeSpot) {
+          this.targetX = freeSpot.x;
+          this.targetY = freeSpot.y;
+          this.state = 'moving';
+          this.actionIntent = 'build_shelter';
+          return;
+        }
+      }
+    }
+
+    // Wenn Steine knapp sind (< 3): Steine vom Felsen sammeln!
+    if (campfireStock.stone < 3) {
+      const rock = this.findNearestTile(map, 'rock');
+      if (rock) {
+        this.targetX = rock.x;
+        this.targetY = rock.y;
         this.state = 'moving';
-        this.actionIntent = 'build_shelter';
+        this.actionIntent = 'mine_rock';
         return;
       }
     }
@@ -734,8 +751,8 @@ export class Human {
       this.actionIntent = 'deliver_stock';
       return;
     } else if (this.state === 'building') {
-      campfireStock.stone = Math.max(0, campfireStock.stone - 2);
-      campfireStock.wood = Math.max(0, campfireStock.wood - 3);
+      campfireStock.stone = Math.max(0, campfireStock.stone - 1);
+      campfireStock.wood = Math.max(0, campfireStock.wood - 2);
       const gx = Math.round(this.x);
       const gy = Math.round(this.y);
       if (map[gy] && map[gy][gx]) {
@@ -872,7 +889,7 @@ export class Human {
     return nearest;
   }
 
-  findFreeShelterSpot(map) {
+  findFreeShelterSpot(map, humans = []) {
     // Sucht einen ebenen Platz im Umkreis des Lagers (Radius 1 bis 4)
     for (let r = 1; r <= 4; r++) {
       for (let dy = -r; dy <= r; dy++) {
@@ -884,7 +901,10 @@ export class Human {
               const t = map[sy][sx];
               // Freies Grasland ohne Bauten, Pflanzen oder Felsen
               if ((t.type === 'grass' || t.type === 'path') && !t.plant && t.type !== 'fire' && t.type !== 'shelter') {
-                return { x: sx, y: sy };
+                const alreadyTargeted = humans.some(h => h.isAlive && h.actionIntent === 'build_shelter' && Math.round(h.targetX) === sx && Math.round(h.targetY) === sy);
+                if (!alreadyTargeted) {
+                  return { x: sx, y: sy };
+                }
               }
             }
           }
