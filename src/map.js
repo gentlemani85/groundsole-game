@@ -1,4 +1,4 @@
-import { MAP_SIZE, CAMP_CENTER } from './config.js';
+import { MAP_SIZE, CAMP_CENTER, SHELTER_CONFIG, campfireStock, fireState } from './config.js';
 
 export function createMap() {
   const map = [];
@@ -111,6 +111,68 @@ export function updateEcology(map, dtSec, logEvent) {
 
       if (tile.type === 'grass' && tile.npk < 45) {
         tile.npk = Math.min(45, tile.npk + dtSec * 0.08);
+      }
+
+      // ==========================================
+      // HÜTTEN-VERFALL (Verwitterung durch Wind & Wetter)
+      // Ohne Wartung durch Menschen verfällt jede Schutzhütte allmählich!
+      // ==========================================
+      if (tile.type === 'shelter') {
+        if (!tile.shelter) {
+          tile.shelter = { condition: 100, capacity: SHELTER_CONFIG.capacity };
+        }
+        tile.shelter.condition -= dtSec * SHELTER_CONFIG.decayRate;
+        if (tile.shelter.condition <= 0) {
+          tile.type = 'grass';
+          tile.shelter = null;
+          logEvent(`🏚️ Eine baufällige Schutzhütte bei [${x}, ${y}] ist eingestürzt und verfallen!`);
+        }
+      }
+
+      // ==========================================
+      // DEZENTRALE FEUER-THERMODYNAMIK (Jedes Feuer brennt autark!)
+      // ==========================================
+      if (tile.type === 'fire') {
+        const isCampCenter = (x === CAMP_CENTER.x && y === CAMP_CENTER.y);
+        if (!tile.fire) {
+          tile.fire = {
+            intensity: isCampCenter ? (fireState.intensity || 85) : 100,
+            woodBurnTimer: 0,
+            wood: isCampCenter ? 0 : 3,
+            isCampCenter: isCampCenter
+          };
+        }
+
+        tile.fire.woodBurnTimer = (tile.fire.woodBurnTimer || 0) + dtSec;
+        if (tile.fire.woodBurnTimer >= 22.0) {
+          tile.fire.woodBurnTimer = 0;
+          if (tile.fire.isCampCenter) {
+            // Zentrales Lagerfeuer bezieht Brennholz aus dem Clan-Vorratslager
+            if (campfireStock.wood > 0) {
+              campfireStock.wood--;
+              tile.fire.intensity = Math.min(100, tile.fire.intensity + 15);
+            } else {
+              tile.fire.intensity = Math.max(0, tile.fire.intensity - 20);
+              if (tile.fire.intensity <= 0) {
+                logEvent(`❄️ Alarm! Das Stammesfeuer ist erloschen! Kälte bricht herein.`);
+              }
+            }
+            fireState.intensity = tile.fire.intensity;
+          } else {
+            // Autarke Außen-Feuerstelle: Verbrennt ihren eigenen Holzvorrat
+            if (tile.fire.wood > 0) {
+              tile.fire.wood--;
+              tile.fire.intensity = Math.min(100, tile.fire.intensity + 15);
+            } else {
+              tile.fire.intensity = Math.max(0, tile.fire.intensity - 25);
+              if (tile.fire.intensity <= 0) {
+                tile.type = 'grass';
+                tile.fire = null;
+                logEvent(`💨 Eine Außenfeuerstelle bei [${x}, ${y}] ist erloschen.`);
+              }
+            }
+          }
+        }
       }
 
       if (tile.plant) {

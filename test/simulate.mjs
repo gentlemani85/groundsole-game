@@ -22,19 +22,8 @@ let maxPop = humans.length;
 let minPop = humans.length;
 
 for (let i = 0; i < TICKS; i++) {
-  // Ökologie & Feuer
+  // Ökologie, Verfall & dezentrale Feuer-Thermodynamik
   updateEcology(map, dt, logEvent);
-
-  fireState.woodBurnTimer = (fireState.woodBurnTimer || 0) + dt;
-  if (fireState.woodBurnTimer >= 24.0) {
-    fireState.woodBurnTimer = 0;
-    if (campfireStock.wood > 0) {
-      campfireStock.wood--;
-      fireState.intensity = Math.min(100, fireState.intensity + 15);
-    } else {
-      fireState.intensity = Math.max(0, fireState.intensity - 20);
-    }
-  }
 
   // Fauna
   maybeSpawnWildAnimal(animals, humans, logEvent);

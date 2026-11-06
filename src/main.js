@@ -200,6 +200,15 @@ function applyToolAtScreen(sx, sy) {
     } else if (activeTool === 'fire') {
       tile.type = 'fire';
       tile.plant = null;
+      const isCamp = (grid.x === CAMP_CENTER.x && grid.y === CAMP_CENTER.y);
+      tile.fire = {
+        intensity: 100,
+        woodBurnTimer: 0,
+        wood: isCamp ? 0 : 4,
+        isCampCenter: isCamp
+      };
+      if (isCamp) fireState.intensity = 100;
+      logEvent(`🔥 Autarke Feuerstelle platziert bei [${grid.x}, ${grid.y}].`);
     } else if (activeTool === 'water') {
       tile.type = 'water';
       tile.plant = null;
@@ -222,6 +231,8 @@ function applyToolAtScreen(sx, sy) {
     } else if (activeTool === 'shelter') {
       tile.type = 'shelter';
       tile.plant = null;
+      tile.shelter = { condition: 100, capacity: 2 };
+      logEvent(`⛺ Schutzhütte platziert bei [${grid.x}, ${grid.y}] (Kapazität: 2).`);
     } else if (activeTool === 'inspect') {
       for (const h of humans) {
         if (h.isAlive && Math.hypot(h.x - grid.x, h.y - grid.y) < 1.2) {
@@ -240,24 +251,8 @@ function loop(now) {
   const dtSec = Math.min(0.1, (now - lastTime) / 1000) * simSpeed;
   lastTime = now;
 
-  // 1. Ökologie & Feuer-Thermodynamik (Pfad B)
+  // 1. Ökologie & dezentrale Feuer-/Hütten-Thermodynamik
   updateEcology(map, dtSec, logEvent);
-
-  // Feuer verbraucht stetig Holz (alle ~24 Sek) oder erlischt langsam
-  fireState.woodBurnTimer += dtSec;
-  if (fireState.woodBurnTimer >= 24.0) {
-    fireState.woodBurnTimer = 0;
-    if (campfireStock.wood > 0) {
-      campfireStock.wood--;
-      fireState.intensity = Math.min(100, fireState.intensity + 15);
-    } else {
-      // Kein Holz mehr im Lager: Feuer erlischt!
-      fireState.intensity = Math.max(0, fireState.intensity - 20);
-      if (fireState.intensity <= 0) {
-        logEvent(`❄️ Alarm! Das Stammesfeuer ist erloschen! Kälte bricht herein.`);
-      }
-    }
-  }
 
   // 2. Wildtier-Spawn & Update
   maybeSpawnWildAnimal(animals, humans, logEvent);

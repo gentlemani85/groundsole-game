@@ -15,8 +15,15 @@ export const campfireStock = {
   water: 3
 };
 
-// Das Feuer als thermodynamisches System
+// Das zentrale Feuer als thermodynamisches System
 export const fireState = {
   intensity: 0, // ZU BEGINN ERLOSCHEN (0%): Der Clan muss erst das Feuer entfachen!
   woodBurnTimer: 0
+};
+
+// Hütten-Parameter (Kapazität & Verfall)
+export const SHELTER_CONFIG = {
+  capacity: 2,             // Max 2 Personen pro Hütte
+  decayRate: 0.22,          // Verfall pro Sekunde (hält ohne Wartung ca. 450s)
+  repairThreshold: 65       // Reparatur-Bedarf ab unter 65% Haltbarkeit
 };

@@ -22,11 +22,17 @@
 1. **Wasser:** Furten bis 2 Kacheln Breite sind passierbar (bremsen leicht ab); ab 3 Kacheln unpassierbar. Trinken am Ufer.
 2. **Boden & NPK:** Karger Boden = bunte Wildblumen. Hoher NPK (durch Kot/Bakterien) = sattes Grün, schnelles Baum-/Strauchwachstum.
 3. **Pflanzen:** Wachsen in 3 Stufen; vermehren sich durch Kot-Samen UND autonomen Windwurf.
-4. **Feuer vs. Hütte:**
-   * **Feuer:** Zwingende Wärmequelle (Verbrauch: 1 Holz alle ~24s). Fällt es unter 20%, herrscht Kälte (+65% Stoffwechsel). Autonomes Nachlegen & Funken-Schlagen bei Erlöschen.
-   * **Hütte:** Reiner mechanischer Wind- und Schlaffschutz (+85% Energie-Regeneration). Erzeugt NULL Wärme.
-   * **Nahrung:** Rohe Beeren (+55%), Kaltkost (+65%), Gegartes Fleisch/Essen am Feuer (+100% Sättigung + 15% Energieschub).
-5. **Genpool:** Echte Namensvielfalt; Zuzug fremder Frauen nur bei lebenden Männern und ohne Frauenüberhang.
+4. **Feuer-System (Dezentral & Authentisch):**
+   * **Autarkie:** Jede Feuerstelle auf der Karte ist eine eigenständige Instanz mit individuellem Brennstoff und Intensität (kein globales Singleton-Feuer).
+   * **Optik:** Echtes Flammen-Rendering mit züngelnden Bézier-Flammenzungen (Glutbett, Funkenflug, Rauchfahne, pulsierender Wärmelichthof).
+   * **Wärmeradius:** Spendet in 4.5 Kacheln Umkreis aktive Wärme; Kälte erhöht den Stoffwechselverbrauch.
+5. **Schutzhütten-Ökologie (Kapazität & Verfall):**
+   * **Kapazität:** Jede Hütte bietet Platz für maximal 2 Hominiden. Bei Populationswachstum baut der Klan selbstständig zusätzliche Hütten im Lagerumkreis.
+   * **Verfall & Wartung:** Wind und Wetter nagen an den Hütten (Haltbarkeit sinkt). Unter 65% reparieren die Bewohner die Hütte mit Holz. Stirbt der Klan aus, zerfallen alle Hütten nach einiger Zeit vollständig zu Grasland.
+6. **Hetzjagd (Persistence Hunting):**
+   * **Ausdauer-Physik:** Der Ur-Hirsch flieht bei Gefahr, ermüdet jedoch bei anhaltender Hetzjagd (Ausdauerverbrauch, Hecheln, Verlangsamung).
+   * **Verfolgung:** Jäger heften sich aktiv an die Fersen des Wildes, sprinten hinterher und erlegen es im Nahkampf, sobald sie auf 1.2 Kacheln herangekommen sind.
+7. **Genpool:** Echte Namensvielfalt; Zuzug fremder Frauen nur bei lebenden Männern und ohne Frauenüberhang.
 
 ---
 

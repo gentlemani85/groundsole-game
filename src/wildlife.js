@@ -10,10 +10,12 @@ export class WildAnimal {
     this.y = y;
     this.targetX = x;
     this.targetY = y;
-    this.state = 'grazing'; // grazing, moving, fleeing, dead
+    this.state = 'grazing'; // grazing, moving, fleeing, exhausted, dead
     this.stateTimer = 4.0;
     this.isAlive = true;
     this.meatYield = 5;
+    this.stamina = 100;     // Ausdauer für Hetzjagd-Simulation
+    this.maxStamina = 100;
   }
 
   update(dt, map, humans, logEvent) {
@@ -32,34 +34,89 @@ export class WildAnimal {
       }
     }
 
-    if (nearestHumanDist < 4.5 && this.state !== 'fleeing') {
+    // Wenn ein Jäger aktiv Jagd auf diesen Hirsch macht, wittert er ihn schon aus größerer Distanz (6.5 Kacheln)
+    const isTargeted = humans.some(h => h.isAlive && h.actionIntent === 'hunt_animal' && h.huntTarget === this);
+    const fleeThreshold = isTargeted ? 6.5 : 4.5;
+
+    if (nearestHumanDist < fleeThreshold && this.state !== 'fleeing' && this.state !== 'exhausted') {
       this.state = 'fleeing';
-      // Flieht in die Gegenrichtung des Menschen
-      const fX = this.x + (this.x - predator.x) * 3;
-      const fY = this.y + (this.y - predator.y) * 3;
-      this.targetX = Math.max(0, Math.min(MAP_SIZE - 1, Math.round(fX)));
-      this.targetY = Math.max(0, Math.min(MAP_SIZE - 1, Math.round(fY)));
-      logEvent(`🦌 Ein Ur-Hirsch wittert Gefahr und flieht in Panik!`);
+      // Flieht in die Gegenrichtung des Verfolgers
+      const angle = Math.atan2(this.y - predator.y, this.x - predator.x);
+      const fX = this.x + Math.cos(angle) * 5;
+      const fY = this.y + Math.sin(angle) * 5;
+      this.targetX = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(fX)));
+      this.targetY = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(fY)));
+      logEvent(`🦌 Der Ur-Hirsch wittert ${predator.name} und flieht in Panik!`);
     }
 
-    // Bewegung
-    if (this.state === 'moving' || this.state === 'fleeing') {
+    // Flucht- & Hetzjagd-Bewegung mit Ausdauer-Verbrauch
+    if (this.state === 'fleeing') {
       const dx = this.targetX - this.x;
       const dy = this.targetY - this.y;
       const dist = Math.hypot(dx, dy);
-      const speed = (this.state === 'fleeing' ? 2.4 : 0.8) * dt;
+
+      // Hetzjagd-Dynamik: Hirsch verbraucht Ausdauer beim schnellen Sprint
+      let speed;
+      if (this.stamina > 20) {
+        speed = 2.4 * dt;
+        this.stamina = Math.max(0, this.stamina - dt * 14); // Ausdauer schwindet
+      } else {
+        // Erschöpfter Galopp: Hirsch wird spürbar langsamer
+        speed = 1.25 * dt;
+        this.stamina = Math.max(0, this.stamina - dt * 6);
+      }
+
+      if (this.stamina <= 3) {
+        // Völlig erschöpft: Hirsch muss anhalten und nach Luft schnappen!
+        this.state = 'exhausted';
+        this.stateTimer = 2.5;
+        logEvent(`🦌 Der Ur-Hirsch ist von der Hetzjagd völlig erschöpft und verlangsamt!`);
+      } else if (dist < speed) {
+        this.x = this.targetX;
+        this.y = this.targetY;
+
+        // Wenn Verfolger noch da ist, weiter fliehen
+        if (nearestHumanDist < 5.0 && predator) {
+          const angle = Math.atan2(this.y - predator.y, this.x - predator.x);
+          const fX = this.x + Math.cos(angle) * 4;
+          const fY = this.y + Math.sin(angle) * 4;
+          this.targetX = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(fX)));
+          this.targetY = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(fY)));
+        } else {
+          this.state = 'grazing';
+          this.stateTimer = 3.0 + Math.random() * 3.0;
+        }
+      } else {
+        this.x += (dx / dist) * speed;
+        this.y += (dy / dist) * speed;
+      }
+    }
+
+    // Erschöpfungs-Pause (Gibt Jäger Chance einzuholen)
+    if (this.state === 'exhausted') {
+      this.stateTimer -= dt;
+      this.stamina = Math.min(100, this.stamina + dt * 8);
+      if (this.stateTimer <= 0) {
+        this.state = 'fleeing';
+        // Erneuter Fluchtversuch
+        if (predator) {
+          const angle = Math.atan2(this.y - predator.y, this.x - predator.x);
+          this.targetX = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(this.x + Math.cos(angle) * 4)));
+          this.targetY = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(this.y + Math.sin(angle) * 4)));
+        }
+      }
+    }
+
+    // Äsen / Weiden & normale Bewegung
+    if (this.state === 'moving') {
+      const dx = this.targetX - this.x;
+      const dy = this.targetY - this.y;
+      const dist = Math.hypot(dx, dy);
+      const speed = 0.8 * dt;
 
       if (dist < speed) {
         this.x = this.targetX;
         this.y = this.targetY;
-
-        // Wenn er am Kartenrand angekommen ist beim Fliehen: Entkommt er!
-        if (this.state === 'fleeing' && (this.x <= 1 || this.x >= MAP_SIZE - 2 || this.y <= 1 || this.y >= MAP_SIZE - 2)) {
-          this.isAlive = false;
-          logEvent(`💨 Der Ur-Hirsch ist ins dichte Unterholz entkommen.`);
-          return;
-        }
-
         this.state = 'grazing';
         this.stateTimer = 3.0 + Math.random() * 4.0;
       } else {
@@ -68,14 +125,13 @@ export class WildAnimal {
       }
     }
 
-    // Äsen / Weiden
     if (this.state === 'grazing') {
+      this.stamina = Math.min(100, this.stamina + dt * 10);
       this.stateTimer -= dt;
       if (this.stateTimer <= 0) {
-        // Ein paar Schritte weiterziehen
         const rx = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(this.x + (Math.random() * 4 - 2))));
         const ry = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(this.y + (Math.random() * 4 - 2))));
-        if (map[ry][rx].type !== 'water') {
+        if (map[ry] && map[ry][rx] && map[ry][rx].type !== 'water') {
           this.targetX = rx;
           this.targetY = ry;
           this.state = 'moving';

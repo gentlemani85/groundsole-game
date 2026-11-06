@@ -1,4 +1,4 @@
-import { campfireStock, fireState, MAP_SIZE, CAMP_CENTER } from './config.js';
+import { campfireStock, fireState, MAP_SIZE, CAMP_CENTER, SHELTER_CONFIG } from './config.js';
 
 let nextId = 4;
 
@@ -66,14 +66,14 @@ export class Human {
 
     // 2. Biophysikalischer Stoffwechsel & Kälte
     // ECHTE TRENNUNG: Die Hütte isoliert nur passiv. Strahlungswärme liefert AUSSCHLIESSLICH das Feuer!
-    // Ist das Feuer unter 20%, herrscht Kälte. 
-    // Schläft man IN der Hütte, wird die Kälte leicht gedämpft (Faktor 1.25 statt 1.6), aber Hütte heizt NICHT!
-    const isCold = (fireState.intensity < 20);
+    // Kälte herrscht, wenn man nicht im Wärmeradius eines brennenden Feuers steht!
+    const nearLitFire = this.isNearLitFire(map);
+    const isCold = !nearLitFire;
     const inShelter = (this.state === 'resting' && this.actionIntent === 'rest_shelter');
     let coldPenalty = 1.0;
 
     if (isCold) {
-      coldPenalty = inShelter ? 1.25 : 1.65; // Hütte schützt etwas vor Windfrost, heizt aber nicht!
+      coldPenalty = inShelter ? 1.25 : 1.65; // Hütte schützt vor Windfrost, heizt aber nicht!
     }
 
     this.needs.water = Math.max(0, this.needs.water - dt * 0.75);
@@ -110,7 +110,7 @@ export class Human {
       } else if (this.needs.food < 50) {  // Isst bereits ab 50% Mangel
         this.seekFood(map);
       } else if (this.needs.energy < 25) {
-        this.seekShelterOrFire(map);
+        this.seekShelterOrFire(map, humans);
       } 
       // Jäger sucht Wild
       else if (this.role.includes('Jäger') && animals.length > 0) {
@@ -122,14 +122,58 @@ export class Human {
       } 
       // Nutzen & Lager-Aufbau
       else if (this.needs.water > 60 && this.needs.food > 60) {
-        this.seekProductiveTask(map, animals);
+        this.seekProductiveTask(map, humans, animals);
       } else {
         this.wander(map);
       }
     }
 
-    // 4. Bewegung mit Furt-Physik (Wasser durchquerbar bis 2 Kacheln Breite!)
+    // 4. Bewegung & Hetzjagd mit Furt-Physik
     if (this.state === 'moving') {
+      // ECHTE HETZJAGD: Jäger verfolgt das flüchtende Wild dynamisch!
+      if (this.actionIntent === 'hunt_animal' && this.huntTarget) {
+        if (!this.huntTarget.isAlive) {
+          this.state = 'idle';
+          this.actionIntent = 'idle';
+          this.huntTarget = null;
+          return;
+        }
+
+        // Zielposition stetig an die aktuelle Hirsch-Position anpassen
+        this.targetX = this.huntTarget.x;
+        this.targetY = this.huntTarget.y;
+
+        // Hetzjagd verbraucht zusätzliche Energie und Wasser (Sprint)
+        this.needs.energy = Math.max(0, this.needs.energy - dt * 0.4);
+        this.needs.water = Math.max(0, this.needs.water - dt * 0.3);
+
+        // Schlagdistanz erreicht? (Nahkampf mit Faustkeil / Stangen-Speer)
+        const distToTarget = Math.hypot(this.huntTarget.x - this.x, this.huntTarget.y - this.y);
+        if (distToTarget <= 1.25) {
+          this.x = this.huntTarget.x;
+          this.y = this.huntTarget.y;
+          this.huntTarget.isAlive = false;
+          this.carried = '🥩 Wildbret';
+          this.targetX = CAMP_CENTER.x;
+          this.targetY = CAMP_CENTER.y;
+          this.state = 'moving';
+          this.actionIntent = 'deliver_stock';
+          this.huntTarget = null;
+          this.utilityContributed += 35;
+          logEvent(`🏹 ${this.name} hat den flüchtenden Ur-Hirsch im Sprint eingeholt und erlegt! Frisches Fleisch fürs Lager.`);
+          return;
+        }
+
+        // Wenn Jäger entkräftet ist (< 15% Energie): Jagd abbrechen
+        if (this.needs.energy < 15) {
+          this.state = 'idle';
+          this.actionIntent = 'idle';
+          this.huntTarget = null;
+          logEvent(`😮‍💨 ${this.name} muss die Hetzjagd vor Erschöpfung abbrechen.`);
+          return;
+        }
+      }
+
       const dx = this.targetX - this.x;
       const dy = this.targetY - this.y;
       const dist = Math.hypot(dx, dy);
@@ -140,12 +184,14 @@ export class Human {
       const onPath = (curTile && curTile.type === 'path');
       const inWater = (curTile && curTile.type === 'water');
 
-      // Seichtes Wasser bremst etwas ab, Pfad beschleunigt
+      // Seichtes Wasser bremst etwas ab, Pfad beschleunigt, Jagd gibt Sprint-Bonus
       let terrainFactor = 1.0;
       if (onPath) terrainFactor = 1.6;
       else if (inWater) terrainFactor = 0.65; // Waten bremst
 
-      const speed = terrainFactor * (this.ageYears > 50 ? 0.75 : 1.0) * dt;
+      const isHuntingSprint = (this.actionIntent === 'hunt_animal');
+      const sprintFactor = isHuntingSprint ? 1.45 : 1.0;
+      const speed = terrainFactor * sprintFactor * (this.ageYears > 50 ? 0.75 : 1.0) * dt;
 
       if (dist < speed) {
         this.x = this.targetX;
@@ -292,22 +338,43 @@ export class Human {
     }
   }
 
-  seekShelterOrFire(map) {
-    const shelter = this.findNearestTile(map, 'shelter');
-    if (shelter) {
-      this.targetX = shelter.x;
-      this.targetY = shelter.y;
+  seekShelterOrFire(map, humans = []) {
+    // 1. Suche freie Schutzhütte (Kapazität: Max 2 Personen pro Hütte!)
+    const availableShelters = [];
+    for (let y = 0; y < MAP_SIZE; y++) {
+      for (let x = 0; x < MAP_SIZE; x++) {
+        const t = map[y][x];
+        if (t.type === 'shelter' && (!t.shelter || t.shelter.condition > 15)) {
+          // Prüfen wie viele Personen aktuell in dieser Hütte schlafen
+          const occupants = humans.filter(h => h.isAlive && h.state === 'resting' && h.actionIntent === 'rest_shelter' && Math.round(h.x) === x && Math.round(h.y) === y).length;
+          const cap = t.shelter?.capacity || SHELTER_CONFIG.capacity;
+          if (occupants < cap) {
+            availableShelters.push({ x, y, dist: Math.hypot(x - this.x, y - this.y) });
+          }
+        }
+      }
+    }
+
+    if (availableShelters.length > 0) {
+      availableShelters.sort((a, b) => a.dist - b.dist);
+      this.targetX = availableShelters[0].x;
+      this.targetY = availableShelters[0].y;
       this.state = 'moving';
       this.actionIntent = 'rest_shelter';
       return;
     }
-    const fire = this.findNearestTile(map, 'fire');
+
+    // Wenn alle Hütten voll sind oder keine steht: Rast an einer warmen Feuerstelle
+    const fire = this.findNearestLitFire(map);
     if (fire) {
       this.targetX = fire.x;
       this.targetY = fire.y;
       this.state = 'moving';
       this.actionIntent = 'rest_fire';
+      return;
     }
+
+    this.wander(map);
   }
 
   seekMate(humans) {
@@ -321,7 +388,7 @@ export class Human {
     }
   }
 
-  seekProductiveTask(map, animals) {
+  seekProductiveTask(map, humans = [], animals = []) {
     if (this.role.includes('Sadhu')) {
       this.targetX = CAMP_CENTER.x;
       this.targetY = CAMP_CENTER.y;
@@ -333,7 +400,7 @@ export class Human {
     // 1. OBERSTE PRIORITÄT: FEUER ENTFALEN ODER HÜTEN!
     // Ohne Feuer herrscht Kälte und rohes Essen. Feuer hat absoluten Vorrang vor der Hütte!
     const fireTile = map[CAMP_CENTER.y] && map[CAMP_CENTER.y][CAMP_CENTER.x];
-    const fireExists = (fireTile && fireTile.type === 'fire' && fireState.intensity > 15);
+    const fireExists = (fireTile && fireTile.type === 'fire' && (fireTile.fire?.intensity > 15 || fireState.intensity > 15));
 
     if (!fireExists && campfireStock.wood > 0) {
       this.targetX = CAMP_CENTER.x;
@@ -344,7 +411,8 @@ export class Human {
     }
 
     // Wenn Feuer brennt, aber schwach wird (< 50%): Nachlegen
-    if (fireState.intensity < 50 && campfireStock.wood > 0) {
+    const currentIntensity = (fireTile && fireTile.fire) ? fireTile.fire.intensity : fireState.intensity;
+    if (currentIntensity < 50 && campfireStock.wood > 0) {
       this.targetX = CAMP_CENTER.x;
       this.targetY = CAMP_CENTER.y;
       this.state = 'moving';
@@ -352,14 +420,44 @@ export class Human {
       return;
     }
 
-    // 2. Schutzhütte bauen (erst WENN ein Feuer brennt!)
-    const existingShelter = this.findNearestTile(map, 'shelter');
-    if (!existingShelter && fireExists && campfireStock.stone >= 2 && campfireStock.wood >= 3) {
-      this.targetX = CAMP_CENTER.x - 1;
-      this.targetY = CAMP_CENTER.y + 1;
+    // 2. HÜTTEN-WARTUNG: Wenn eine Hütte baufällig wird (< 65% Haltbarkeit), ausbessern!
+    let damagedShelter = null;
+    let totalShelterCapacity = 0;
+    for (let y = 0; y < MAP_SIZE; y++) {
+      for (let x = 0; x < MAP_SIZE; x++) {
+        const t = map[y][x];
+        if (t.type === 'shelter') {
+          const cond = t.shelter ? t.shelter.condition : 100;
+          if (cond > 15) {
+            totalShelterCapacity += (t.shelter?.capacity || SHELTER_CONFIG.capacity);
+          }
+          if (cond < SHELTER_CONFIG.repairThreshold && !damagedShelter) {
+            damagedShelter = { x, y };
+          }
+        }
+      }
+    }
+
+    if (damagedShelter && campfireStock.wood >= 1) {
+      this.targetX = damagedShelter.x;
+      this.targetY = damagedShelter.y;
       this.state = 'moving';
-      this.actionIntent = 'build_shelter';
+      this.actionIntent = 'repair_shelter';
       return;
+    }
+
+    // 3. HÜTTEN-KAPAZITÄT (Max 2 Personen pro Hütte):
+    // Braucht der Clan weitere Hütten, weil die Population gewachsen ist?
+    const livingClanSize = humans.filter(h => h.isAlive).length;
+    if (totalShelterCapacity < livingClanSize && fireExists && campfireStock.stone >= 2 && campfireStock.wood >= 3) {
+      const freeSpot = this.findFreeShelterSpot(map);
+      if (freeSpot) {
+        this.targetX = freeSpot.x;
+        this.targetY = freeSpot.y;
+        this.state = 'moving';
+        this.actionIntent = 'build_shelter';
+        return;
+      }
     }
 
     // Wenn Brennholz knapp wird (< 4): Holz hacken hat hohe Priorität!
@@ -498,28 +596,45 @@ export class Human {
     } else if (this.actionIntent === 'build_shelter') {
       this.state = 'building';
       this.stateTimer = 6.0;
+    } else if (this.actionIntent === 'repair_shelter') {
+      this.state = 'repairing';
+      this.stateTimer = 4.0;
     } else if (this.actionIntent === 'stoke_fire') {
       if (campfireStock.wood > 0) {
         campfireStock.wood--;
-        fireState.intensity = Math.min(100, fireState.intensity + 45);
+        const gx = Math.round(this.x);
+        const gy = Math.round(this.y);
+        const fTile = map[gy] && map[gy][gx];
+        if (fTile && fTile.type === 'fire') {
+          if (!fTile.fire) fTile.fire = { intensity: 50, woodBurnTimer: 0, wood: 0, isCampCenter: (gx === CAMP_CENTER.x && gy === CAMP_CENTER.y) };
+          fTile.fire.intensity = Math.min(100, fTile.fire.intensity + 45);
+          if (fTile.fire.isCampCenter) fireState.intensity = fTile.fire.intensity;
+        } else {
+          fireState.intensity = Math.min(100, fireState.intensity + 45);
+        }
         this.utilityContributed += 15;
-        logEvent(`🔥 ${this.name} hat Holz nachgelegt und das Stammesfeuer geschürt!`);
+        logEvent(`🔥 ${this.name} hat Holz nachgelegt und das Feuer geschürt!`);
       }
       this.state = 'idle';
     } else if (this.actionIntent === 'rekindle_fire') {
       // Wenn das Feuer komplett aus war: Aufwändiges Feuer-Bohren / Schlagen (Faustkeil & Zunder)
       if (campfireStock.wood > 0) {
         campfireStock.wood--;
-        fireState.intensity = 85;
-        // Kachel physisch in eine Feuerstelle verwandeln!
         const gx = Math.round(this.x);
         const gy = Math.round(this.y);
         if (map[gy] && map[gy][gx]) {
           map[gy][gx].type = 'fire';
           map[gy][gx].plant = null;
+          map[gy][gx].fire = {
+            intensity: 85,
+            woodBurnTimer: 0,
+            wood: 0,
+            isCampCenter: (gx === CAMP_CENTER.x && gy === CAMP_CENTER.y)
+          };
         }
+        fireState.intensity = 85;
         this.utilityContributed += 35;
-        logEvent(`✨ ${this.name} hat mit Faustkeilen Funken geschlagen und das erste Stammesfeuer entfacht!`);
+        logEvent(`✨ ${this.name} hat mit Faustkeilen Funken geschlagen und das Stammesfeuer entfacht!`);
       }
       this.state = 'idle';
     } else if (this.actionIntent === 'deliver_stock') {
@@ -623,9 +738,23 @@ export class Human {
       campfireStock.wood = Math.max(0, campfireStock.wood - 3);
       const gx = Math.round(this.x);
       const gy = Math.round(this.y);
-      map[gy][gx].type = 'shelter';
+      if (map[gy] && map[gy][gx]) {
+        map[gy][gx].type = 'shelter';
+        map[gy][gx].plant = null;
+        map[gy][gx].shelter = { condition: 100, capacity: SHELTER_CONFIG.capacity };
+      }
       this.utilityContributed += 40;
-      logEvent(`⛺ Schutzhütte errichtet!`);
+      logEvent(`⛺ Schutzhütte errichtet (Platz für 2)!`);
+    } else if (this.state === 'repairing') {
+      if (campfireStock.wood > 0) campfireStock.wood--;
+      const gx = Math.round(this.x);
+      const gy = Math.round(this.y);
+      if (map[gy] && map[gy][gx] && map[gy][gx].type === 'shelter') {
+        if (!map[gy][gx].shelter) map[gy][gx].shelter = { condition: 100, capacity: SHELTER_CONFIG.capacity };
+        else map[gy][gx].shelter.condition = 100;
+        this.utilityContributed += 20;
+        logEvent(`🔨 ${this.name} hat die Schutzhütte ausgebessert und gewartet.`);
+      }
     } else if (this.state === 'mating') {
       this.needs.libido = 0;
       if (this.gender === 'f') {
@@ -703,6 +832,66 @@ export class Human {
       }
     }
     return nearest;
+  }
+
+  isNearLitFire(map) {
+    // Prüfen, ob der Hominide im Wärmeradius (4.5 Kacheln) eines brennenden Feuers steht
+    for (let y = 0; y < MAP_SIZE; y++) {
+      for (let x = 0; x < MAP_SIZE; x++) {
+        const t = map[y][x];
+        if (t.type === 'fire') {
+          const intensity = t.fire ? t.fire.intensity : (x === CAMP_CENTER.x && y === CAMP_CENTER.y ? fireState.intensity : 100);
+          if (intensity > 15) {
+            const d = Math.hypot(x - this.x, y - this.y);
+            if (d <= 4.5) return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  findNearestLitFire(map) {
+    let nearest = null;
+    let minDist = 99999;
+    for (let y = 0; y < MAP_SIZE; y++) {
+      for (let x = 0; x < MAP_SIZE; x++) {
+        const t = map[y][x];
+        if (t.type === 'fire') {
+          const intensity = t.fire ? t.fire.intensity : (x === CAMP_CENTER.x && y === CAMP_CENTER.y ? fireState.intensity : 100);
+          if (intensity > 15) {
+            const d = Math.hypot(x - this.x, y - this.y);
+            if (d < minDist) {
+              minDist = d;
+              nearest = { x, y };
+            }
+          }
+        }
+      }
+    }
+    return nearest;
+  }
+
+  findFreeShelterSpot(map) {
+    // Sucht einen ebenen Platz im Umkreis des Lagers (Radius 1 bis 4)
+    for (let r = 1; r <= 4; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.abs(dx) === r || Math.abs(dy) === r) {
+            const sx = CAMP_CENTER.x + dx;
+            const sy = CAMP_CENTER.y + dy;
+            if (sx >= 1 && sx < MAP_SIZE - 1 && sy >= 1 && sy < MAP_SIZE - 1) {
+              const t = map[sy][sx];
+              // Freies Grasland ohne Bauten, Pflanzen oder Felsen
+              if ((t.type === 'grass' || t.type === 'path') && !t.plant && t.type !== 'fire' && t.type !== 'shelter') {
+                return { x: sx, y: sy };
+              }
+            }
+          }
+        }
+      }
+    }
+    return null;
   }
 }
 
