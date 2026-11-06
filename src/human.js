@@ -1,5 +1,6 @@
 import { campfireStock, fireState, MAP_SIZE, CAMP_CENTER, SHELTER_CONFIG } from './config.js';
 import { findPath, isTileWalkable } from './pathfinding.js';
+import { findNearestBushWithBerries, findNearestRootDigSpot, findNearestFishingSpot } from './foraging.js';
 
 let nextId = 4;
 
@@ -191,6 +192,22 @@ export class Human {
       }
     }
 
+    // 2.5 Migration des Stammes: Alle ziehen geschlossen zum Treffpunkt / Rand
+    if (this.state === 'migrating') {
+      const dx = this.targetX - this.x;
+      const dy = this.targetY - this.y;
+      const dist = Math.hypot(dx, dy);
+      const speed = 1.25 * dt;
+      if (dist <= speed) {
+        this.x = this.targetX;
+        this.y = this.targetY;
+      } else {
+        this.x += (dx / dist) * speed;
+        this.y += (dy / dist) * speed;
+      }
+      return;
+    }
+
     // 3. Autonome Prioritäten (Vorausschauend trinken & essen vor akutem Kollaps)
     if (this.state === 'idle') {
       // Höchste logistische Priorität: Getragene Beute / Rohstoffe sofort ins Lager bringen!
@@ -229,7 +246,25 @@ export class Human {
           return;
         }
 
-        // 2. Gelegentlicher leichter Beitrag (Beeren sammeln am Lager)
+        // 2. Gelegentlicher Beitrag älterer Kinder (8 bis 12 Jahre)
+        if (this.ageYears >= 8) {
+          // Jugendliche jagen wendige Feldhasen als Vorbereitung auf die Großwildjagd!
+          const hare = animals.find(a => a.isAlive && a.species === 'hare');
+          if (hare && Math.random() < 0.35) {
+            this.setMoveTarget(map, hare.x, hare.y, 'hunt_animal', hare);
+            return;
+          }
+          // Knollen graben oder Beeren sammeln
+          if (Math.random() < 0.40) {
+            const rootSpot = findNearestRootDigSpot(map, this.x, this.y);
+            if (rootSpot) {
+              this.setMoveTarget(map, rootSpot.x, rootSpot.y, 'dig_roots');
+              return;
+            }
+          }
+        }
+
+        // 3. Beeren sammeln in Lagernähe
         if (Math.random() < 0.35) {
           const bush = this.findNearestBushWithBerries(map);
           if (bush && Math.hypot(bush.x - CAMP_CENTER.x, bush.y - CAMP_CENTER.y) < 8) {
@@ -238,17 +273,17 @@ export class Human {
           }
         }
 
-        // 3. Neugieriges Herumtoben in Lagernähe
+        // 4. Neugieriges Herumtoben in Lagernähe
         this.wanderNearCamp(map);
         return;
       }
 
       if (this.needs.bladder > 85) {
         this.seekRelief(map);
-      } else if (this.needs.water < 55) { // Trinkt bereits ab 55% Mangel (nicht erst bei 35%)
+      } else if (this.needs.water < 55) {
         this.seekWater(map);
-      } else if (this.needs.food < 50) {  // Isst bereits ab 50% Mangel
-        this.seekFood(map);
+      } else if (this.needs.food < 50) {
+        this.seekFood(map, animals);
       } else if (this.needs.energy < 25) {
         this.seekShelterOrFire(map, humans);
       } 
@@ -305,11 +340,15 @@ export class Human {
         if (distToTarget <= 1.25) {
           this.x = this.huntTarget.x;
           this.y = this.huntTarget.y;
+          const meat = this.huntTarget.meatYield || 5;
+          const aIcon = this.huntTarget.icon || '🦌';
+          const aName = this.huntTarget.name || 'Wildtier';
           this.huntTarget.isAlive = false;
           this.carried = '🥩 Wildbret';
+          this.lastMeatYield = meat;
           this.huntTarget = null;
-          this.utilityContributed += 35;
-          logEvent(`🏹 ${this.name} hat den flüchtenden Ur-Hirsch im Sprint eingeholt und erlegt! Frisches Fleisch fürs Lager.`);
+          this.utilityContributed += (meat * 5);
+          logEvent(`🏹 ${this.name} hat ${aIcon} ${aName} erlegt! (+${meat} Fleisch fürs Lager)`);
           this.setMoveTarget(map, CAMP_CENTER.x, CAMP_CENTER.y, 'deliver_stock');
           return;
         }
@@ -454,10 +493,12 @@ export class Human {
   }
 
   seekHunt(animals, map) {
-    const deer = animals.find(a => a.isAlive);
-    if (deer) {
-      this.setMoveTarget(map, deer.x, deer.y, 'hunt_animal', deer);
-    }
+    const liveAnimals = animals.filter(a => a.isAlive);
+    if (liveAnimals.length === 0) return;
+    // Nächstes Tier anvisieren
+    liveAnimals.sort((a, b) => Math.hypot(a.x - this.x, a.y - this.y) - Math.hypot(b.x - this.x, b.y - this.y));
+    const target = liveAnimals[0];
+    this.setMoveTarget(map, target.x, target.y, 'hunt_animal', target);
   }
 
   seekRelief(map) {
@@ -513,30 +554,52 @@ export class Human {
     }
   }
 
-  seekFood(map) {
-    if (campfireStock.food > 0 && Math.hypot(this.x - CAMP_CENTER.x, this.y - CAMP_CENTER.y) < 6) {
+  seekFood(map, animals = []) {
+    // 1. Vorrat am Lagerfeuer
+    if (campfireStock.food > 0 && Math.hypot(this.x - CAMP_CENTER.x, this.y - CAMP_CENTER.y) < 7) {
       this.setMoveTarget(map, CAMP_CENTER.x, CAMP_CENTER.y, 'eat_stock');
       return;
     }
-    let nearestBush = null;
-    let minDist = 9999;
-    for (let y = 0; y < MAP_SIZE; y++) {
-      for (let x = 0; x < MAP_SIZE; x++) {
-        const p = map[y][x].plant;
-        if (p && p.type === 'bush' && p.berries > 0) {
-          const d = Math.hypot(x - this.x, y - this.y);
-          if (d < minDist) {
-            minDist = d;
-            nearestBush = { x, y };
-          }
-        }
+
+    // 2. Nächster Beerenstrauch mit Früchten
+    const bush = findNearestBushWithBerries(map, this.x, this.y);
+    if (bush && Math.hypot(bush.x - this.x, bush.y - this.y) < 9) {
+      this.setMoveTarget(map, bush.x, bush.y, 'eat_bush');
+      return;
+    }
+
+    // 3. Fischen am Gewässer (ab 10 Jahren)
+    if (this.ageYears >= 10) {
+      const fishSpot = findNearestFishingSpot(map, this.x, this.y);
+      if (fishSpot && Math.hypot(fishSpot.x - this.x, fishSpot.y - this.y) < 9) {
+        this.setMoveTarget(map, fishSpot.x, fishSpot.y, 'fish_river');
+        return;
       }
     }
-    if (nearestBush) {
-      this.setMoveTarget(map, nearestBush.x, nearestBush.y, 'eat_bush');
-    } else {
-      this.wander(map);
+
+    // 4. Wurzeln/Knollen graben mit Grabstock
+    const rootSpot = findNearestRootDigSpot(map, this.x, this.y);
+    if (rootSpot && Math.hypot(rootSpot.x - this.x, rootSpot.y - this.y) < 10) {
+      this.setMoveTarget(map, rootSpot.x, rootSpot.y, 'dig_roots');
+      return;
     }
+
+    // 5. Jagd auf Tiere (falls alt genug)
+    if (this.ageYears >= 12 && animals && animals.some(a => a.isAlive)) {
+      this.seekHunt(animals, map);
+      return;
+    }
+
+    if (bush) {
+      this.setMoveTarget(map, bush.x, bush.y, 'eat_bush');
+      return;
+    }
+    if (rootSpot) {
+      this.setMoveTarget(map, rootSpot.x, rootSpot.y, 'dig_roots');
+      return;
+    }
+
+    this.wander(map);
   }
 
   seekShelterOrFire(map, humans = []) {
@@ -668,10 +731,30 @@ export class Human {
       }
     }
 
-    if (campfireStock.food < 5) {
-      let bush = this.findNearestBushWithBerries(map);
+    if (campfireStock.food < 6) {
+      // 1. Reife Beeren ernten
+      const bush = findNearestBushWithBerries(map, this.x, this.y);
       if (bush) {
         this.setMoveTarget(map, bush.x, bush.y, 'haul_food');
+        return;
+      }
+      // 2. Fischen am Fluss (ab 12 Jahren)
+      if (this.ageYears >= 12) {
+        const fishSpot = findNearestFishingSpot(map, this.x, this.y);
+        if (fishSpot) {
+          this.setMoveTarget(map, fishSpot.x, fishSpot.y, 'fish_river');
+          return;
+        }
+      }
+      // 3. Wurzeln/Knollen graben
+      const rootSpot = findNearestRootDigSpot(map, this.x, this.y);
+      if (rootSpot) {
+        this.setMoveTarget(map, rootSpot.x, rootSpot.y, 'dig_roots');
+        return;
+      }
+      // 4. Jagd auf Tiere (falls Jäger/Erwachsener)
+      if (this.ageYears >= 12 && animals && animals.some(a => a.isAlive)) {
+        this.seekHunt(animals, map);
         return;
       }
     }
@@ -762,6 +845,12 @@ export class Human {
     } else if (this.actionIntent === 'chop_tree') {
       this.state = 'chopping';
       this.stateTimer = 4.5;
+    } else if (this.actionIntent === 'dig_roots') {
+      this.state = 'digging';
+      this.stateTimer = 3.2;
+    } else if (this.actionIntent === 'fish_river') {
+      this.state = 'fishing';
+      this.stateTimer = 4.0;
     } else if (this.actionIntent === 'haul_food') {
       const tile = map[Math.round(this.y)][Math.round(this.x)];
       if (tile && tile.plant && tile.plant.berries > 0) {
@@ -828,13 +917,22 @@ export class Human {
       } else if (this.carried === '🍇 Beeren') {
         campfireStock.food++;
         this.utilityContributed += 8;
+      } else if (this.carried === '🥔 Wurzelknollen') {
+        campfireStock.food += 2;
+        this.utilityContributed += 10;
+        logEvent(`🥔 ${this.name} liefert nahrhafte Knollen/Wurzeln (+2 Vorrat).`);
+      } else if (this.carried === '🐟 Flussfisch') {
+        campfireStock.food += 2;
+        this.utilityContributed += 12;
+        logEvent(`🐟 ${this.name} bringt frischen Fisch ans Lagerfeuer (+2 Vorrat).`);
       } else if (this.carried === '💧 Wasser') {
         campfireStock.water++;
         this.utilityContributed += 8;
       } else if (this.carried === '🥩 Wildbret') {
-        campfireStock.food += 5;
-        this.utilityContributed += 35;
-        logEvent(`🍖 ${this.name} bringt frisches Fleisch ins Lager! Vorrat +5.`);
+        const yieldAmt = this.lastMeatYield || 5;
+        campfireStock.food += yieldAmt;
+        this.utilityContributed += (yieldAmt * 5);
+        logEvent(`🍖 ${this.name} bringt frisches Fleisch ins Lager! Vorrat +${yieldAmt}.`);
       }
       this.carried = null;
       this.state = 'idle';
@@ -885,12 +983,31 @@ export class Human {
   finishAction(map, animals, logEvent) {
     if (this.state === 'hunting') {
       if (this.huntTarget) {
+        const meat = this.huntTarget.meatYield || 5;
+        const aName = this.huntTarget.name || 'Wild';
         this.huntTarget.isAlive = false;
         this.carried = '🥩 Wildbret';
+        this.lastMeatYield = meat;
         this.setMoveTarget(map, CAMP_CENTER.x, CAMP_CENTER.y, 'deliver_stock');
-        logEvent(`🏹 ${this.name} hat den Ur-Hirsch erlegt! Er trägt das Fleisch ins Lager.`);
+        logEvent(`🏹 ${this.name} hat ein ${aName} erlegt! Er trägt das Fleisch (${meat} Vorrat) ins Lager.`);
         return;
       }
+    } else if (this.state === 'digging') {
+      const gx = Math.round(this.x);
+      const gy = Math.round(this.y);
+      const t = map[gy] && map[gy][gx];
+      if (t) {
+        t.roots = Math.max(0, (t.roots || 1) - 1);
+      }
+      this.carried = '🥔 Wurzelknollen';
+      this.setMoveTarget(map, CAMP_CENTER.x, CAMP_CENTER.y, 'deliver_stock');
+      logEvent(`🥔 ${this.name} hat nahrhafte Wurzelknollen ausgegraben.`);
+      return;
+    } else if (this.state === 'fishing') {
+      this.carried = '🐟 Flussfisch';
+      this.setMoveTarget(map, CAMP_CENTER.x, CAMP_CENTER.y, 'deliver_stock');
+      logEvent(`🐟 ${this.name} hat am Flussufer einen Fisch erbeutet!`);
+      return;
     } else if (this.state === 'relieving') {
       this.needs.bladder = 0;
       const gx = Math.round(this.x);

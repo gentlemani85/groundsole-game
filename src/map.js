@@ -37,15 +37,17 @@ export function createMap() {
       }
       // Beerensträucher im Süden UND in der Nähe des Lagers
       else if ((y >= 20 && Math.random() < 0.25) || (Math.hypot(x - CAMP_CENTER.x, y - CAMP_CENTER.y) > 3 && Math.hypot(x - CAMP_CENTER.x, y - CAMP_CENTER.y) < 7 && Math.random() < 0.12)) {
-        const bushMaxAge = 350 + Math.random() * 300;
+        const bushMaxAge = 700 + Math.random() * 450;
         plant = {
           type: 'bush',
           stage: 3,
-          berries: 3,
+          berries: 4,
+          maxBerries: 5,
           berryTimer: 0,
           seedVariance: Math.random(),
           maxAge: bushMaxAge,
-          ageTimer: Math.random() * (bushMaxAge * 0.7)
+          ageTimer: Math.random() * (bushMaxAge * 0.4),
+          isRootstock: false
         };
         npk = 55;
       }
@@ -84,10 +86,17 @@ export function createMap() {
         }
       }
 
+      // Wurzelknollen im Boden (Grabstock-Ressource)
+      let roots = 0;
+      if (type === 'grass' && !plant && Math.random() < 0.40) {
+        roots = 1 + Math.floor(Math.random() * 2);
+      }
+
       map[y][x] = {
         type: type,
         npk: npk,
         plant: plant,
+        roots: roots,
         poop: null,
         flowerDots: flowerDots,
         trample: trample,
@@ -161,6 +170,11 @@ export function updateEcology(map, dtSec, logEvent) {
 
       if (tile.type === 'grass' && tile.npk < 45) {
         tile.npk = Math.min(45, tile.npk + dtSec * 0.08);
+      }
+
+      // Regeneration von essbaren Wurzelknollen im nahrhaften Grasboden
+      if (tile.type === 'grass' && (!tile.roots || tile.roots < 3) && tile.npk >= 30 && Math.random() < 0.003 * dtSec) {
+        tile.roots = (tile.roots || 0) + 1;
       }
 
       // ==========================================
@@ -254,30 +268,48 @@ export function updateEcology(map, dtSec, logEvent) {
         const p = tile.plant;
         const growthRate = (tile.npk / 40);
 
-        // Natürlicher Alterungs- und Totholz-Zyklus (Verhindert ewiges Überwuchern)
+        // Natürlicher Alterungs- und Totholz-Zyklus
         if (p.stage === 3) {
           p.ageTimer = (p.ageTimer || 0) + dtSec;
-          const maxAge = p.maxAge || (p.type === 'bush' ? 450 : 1200);
+          const maxAge = p.maxAge || (p.type === 'bush' ? 800 : 1200);
           if (p.ageTimer >= maxAge) {
-            const compostNPK = p.type === 'bush' ? 25 : 40;
-            tile.npk = Math.min(100, tile.npk + compostNPK);
-            tile.plant = null;
-            continue;
+            if (p.type === 'bush') {
+              // Stockausschlag / Wurzelstock-Regeneration:
+              // Beerenstrauch stirbt nicht spurlos, sondern zieht sich in den Wurzelstock zurück!
+              p.stage = 1;
+              p.isRootstock = true;
+              p.berries = 0;
+              p.ageTimer = 0;
+              p.growthTimer = 0;
+              logEvent(`🌱 Ein alter Beerenstrauch bei [${x}, ${y}] zieht sich in den schlafenden Wurzelstock zurück.`);
+              continue;
+            } else {
+              const compostNPK = 40;
+              tile.npk = Math.min(100, tile.npk + compostNPK);
+              tile.plant = null;
+              continue;
+            }
           }
         }
 
         if (p.stage < 3) {
           p.growthTimer = (p.growthTimer || 0) + dtSec * growthRate;
-          if (p.growthTimer >= 18.0) {
+          if (p.growthTimer >= 16.0) {
             p.stage++;
             p.growthTimer = 0;
-            logEvent(`🌿 Ein ${p.type === 'bush' ? 'Beerenstrauch' : 'Baum'} ist gewachsen (Stufe ${p.stage}).`);
+            if (p.type === 'bush' && p.stage === 3 && p.isRootstock) {
+              p.isRootstock = false;
+              p.berries = 2;
+              logEvent(`🌿 Ein Wurzelstock bei [${x}, ${y}] hat wieder voll ausgetrieben und trägt Früchte!`);
+            } else {
+              logEvent(`🌿 Ein ${p.type === 'bush' ? 'Beerenstrauch' : 'Baum'} ist gewachsen (Stufe ${p.stage}).`);
+            }
           }
         }
 
-        if (p.type === 'bush' && p.stage >= 2 && p.berries < 3) {
+        if (p.type === 'bush' && p.stage >= 2 && p.berries < (p.maxBerries || 5) && !p.isRootstock) {
           p.berryTimer = (p.berryTimer || 0) + dtSec;
-          if (p.berryTimer >= 12.0) {
+          if (p.berryTimer >= 9.0) {
             p.berries++;
             p.berryTimer = 0;
           }

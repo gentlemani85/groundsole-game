@@ -85,15 +85,17 @@
           };
           npk = 65;
         } else if (y >= 20 && Math.random() < 0.25 || Math.hypot(x - CAMP_CENTER.x, y - CAMP_CENTER.y) > 3 && Math.hypot(x - CAMP_CENTER.x, y - CAMP_CENTER.y) < 7 && Math.random() < 0.12) {
-          const bushMaxAge = 350 + Math.random() * 300;
+          const bushMaxAge = 700 + Math.random() * 450;
           plant = {
             type: "bush",
             stage: 3,
-            berries: 3,
+            berries: 4,
+            maxBerries: 5,
             berryTimer: 0,
             seedVariance: Math.random(),
             maxAge: bushMaxAge,
-            ageTimer: Math.random() * (bushMaxAge * 0.7)
+            ageTimer: Math.random() * (bushMaxAge * 0.4),
+            isRootstock: false
           };
           npk = 55;
         }
@@ -127,10 +129,15 @@
             });
           }
         }
+        let roots = 0;
+        if (type === "grass" && !plant && Math.random() < 0.4) {
+          roots = 1 + Math.floor(Math.random() * 2);
+        }
         map2[y][x] = {
           type,
           npk,
           plant,
+          roots,
           poop: null,
           flowerDots,
           trample,
@@ -200,6 +207,9 @@
         }
         if (tile.type === "grass" && tile.npk < 45) {
           tile.npk = Math.min(45, tile.npk + dtSec * 0.08);
+        }
+        if (tile.type === "grass" && (!tile.roots || tile.roots < 3) && tile.npk >= 30 && Math.random() < 3e-3 * dtSec) {
+          tile.roots = (tile.roots || 0) + 1;
         }
         if (tile.trample && tile.trample > 0) {
           tile.trample = Math.max(0, tile.trample - dtSec * 0.35);
@@ -276,25 +286,41 @@
           const growthRate = tile.npk / 40;
           if (p.stage === 3) {
             p.ageTimer = (p.ageTimer || 0) + dtSec;
-            const maxAge = p.maxAge || (p.type === "bush" ? 450 : 1200);
+            const maxAge = p.maxAge || (p.type === "bush" ? 800 : 1200);
             if (p.ageTimer >= maxAge) {
-              const compostNPK = p.type === "bush" ? 25 : 40;
-              tile.npk = Math.min(100, tile.npk + compostNPK);
-              tile.plant = null;
-              continue;
+              if (p.type === "bush") {
+                p.stage = 1;
+                p.isRootstock = true;
+                p.berries = 0;
+                p.ageTimer = 0;
+                p.growthTimer = 0;
+                logEvent2(`\u{1F331} Ein alter Beerenstrauch bei [${x}, ${y}] zieht sich in den schlafenden Wurzelstock zur\xFCck.`);
+                continue;
+              } else {
+                const compostNPK = 40;
+                tile.npk = Math.min(100, tile.npk + compostNPK);
+                tile.plant = null;
+                continue;
+              }
             }
           }
           if (p.stage < 3) {
             p.growthTimer = (p.growthTimer || 0) + dtSec * growthRate;
-            if (p.growthTimer >= 18) {
+            if (p.growthTimer >= 16) {
               p.stage++;
               p.growthTimer = 0;
-              logEvent2(`\u{1F33F} Ein ${p.type === "bush" ? "Beerenstrauch" : "Baum"} ist gewachsen (Stufe ${p.stage}).`);
+              if (p.type === "bush" && p.stage === 3 && p.isRootstock) {
+                p.isRootstock = false;
+                p.berries = 2;
+                logEvent2(`\u{1F33F} Ein Wurzelstock bei [${x}, ${y}] hat wieder voll ausgetrieben und tr\xE4gt Fr\xFCchte!`);
+              } else {
+                logEvent2(`\u{1F33F} Ein ${p.type === "bush" ? "Beerenstrauch" : "Baum"} ist gewachsen (Stufe ${p.stage}).`);
+              }
             }
           }
-          if (p.type === "bush" && p.stage >= 2 && p.berries < 3) {
+          if (p.type === "bush" && p.stage >= 2 && p.berries < (p.maxBerries || 5) && !p.isRootstock) {
             p.berryTimer = (p.berryTimer || 0) + dtSec;
-            if (p.berryTimer >= 12) {
+            if (p.berryTimer >= 9) {
               p.berries++;
               p.berryTimer = 0;
             }
@@ -521,6 +547,24 @@
       const zoom = this.cam.zoom;
       const s = plant.stage;
       ctx2.save();
+      if (plant.isRootstock) {
+        ctx2.strokeStyle = "#5c3a21";
+        ctx2.lineWidth = 1.5 * zoom;
+        ctx2.beginPath();
+        ctx2.moveTo(cx, cy + 1 * zoom);
+        ctx2.lineTo(cx - 3 * zoom, cy - 4 * zoom);
+        ctx2.moveTo(cx, cy + 1 * zoom);
+        ctx2.lineTo(cx + 3 * zoom, cy - 5 * zoom);
+        ctx2.moveTo(cx, cy + 1 * zoom);
+        ctx2.lineTo(cx - 0.5 * zoom, cy - 6 * zoom);
+        ctx2.stroke();
+        ctx2.fillStyle = "#78350f";
+        ctx2.beginPath();
+        ctx2.arc(cx, cy + 1 * zoom, 2 * zoom, 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.restore();
+        return;
+      }
       const baseR = (3.2 + s * 2.8) * zoom;
       ctx2.beginPath();
       ctx2.ellipse(cx, cy + 2 * zoom, baseR * 1.2, baseR * 0.55, 0, 0, Math.PI * 2);
@@ -550,6 +594,8 @@
         if (plant.berries >= 1) ctx2.arc(cx - 3 * zoom, cy - baseR + 1 * zoom, berryR, 0, Math.PI * 2);
         if (plant.berries >= 2) ctx2.arc(cx + 3 * zoom, cy - baseR - 2 * zoom, berryR, 0, Math.PI * 2);
         if (plant.berries >= 3) ctx2.arc(cx, cy - baseR - 6 * zoom, berryR, 0, Math.PI * 2);
+        if (plant.berries >= 4) ctx2.arc(cx - 2 * zoom, cy - baseR - 4 * zoom, berryR, 0, Math.PI * 2);
+        if (plant.berries >= 5) ctx2.arc(cx + 2 * zoom, cy - baseR - 5 * zoom, berryR, 0, Math.PI * 2);
         ctx2.fill();
         ctx2.fillStyle = "#fca5a5";
         ctx2.beginPath();
@@ -847,33 +893,106 @@
       const cx = pos.x;
       const cy = pos.y + TILE_H / 2 * zoom;
       ctx2.save();
-      ctx2.beginPath();
-      ctx2.ellipse(cx, cy + 2 * zoom, 6.5 * zoom, 3 * zoom, 0, 0, Math.PI * 2);
-      ctx2.fillStyle = "rgba(0,0,0,0.28)";
-      ctx2.fill();
-      let hop = a.state === "fleeing" ? Math.abs(Math.sin(Date.now() * 0.02)) * 4 * zoom : 0;
-      const bodyY = cy - 6 * zoom - hop;
-      ctx2.fillStyle = "#92400e";
-      ctx2.beginPath();
-      ctx2.ellipse(cx, bodyY, 6 * zoom, 3.5 * zoom, 0, 0, Math.PI * 2);
-      ctx2.fill();
-      ctx2.beginPath();
-      ctx2.moveTo(cx + 3 * zoom, bodyY);
-      ctx2.lineTo(cx + 7 * zoom, bodyY - 6 * zoom);
-      ctx2.lineTo(cx + 4 * zoom, bodyY - 6 * zoom);
-      ctx2.closePath();
-      ctx2.fill();
-      ctx2.beginPath();
-      ctx2.arc(cx + 6.5 * zoom, bodyY - 6.5 * zoom, 2.2 * zoom, 0, Math.PI * 2);
-      ctx2.fill();
-      ctx2.strokeStyle = "#451a03";
-      ctx2.lineWidth = 1.2 * zoom;
-      ctx2.beginPath();
-      ctx2.moveTo(cx + 6 * zoom, bodyY - 8 * zoom);
-      ctx2.lineTo(cx + 5 * zoom, bodyY - 12 * zoom);
-      ctx2.moveTo(cx + 7 * zoom, bodyY - 8 * zoom);
-      ctx2.lineTo(cx + 9 * zoom, bodyY - 12 * zoom);
-      ctx2.stroke();
+      const species = a.species || "deer";
+      if (species === "hare") {
+        ctx2.beginPath();
+        ctx2.ellipse(cx, cy + 1 * zoom, 3.2 * zoom, 1.8 * zoom, 0, 0, Math.PI * 2);
+        ctx2.fillStyle = "rgba(0,0,0,0.22)";
+        ctx2.fill();
+        let hop = a.state === "fleeing" ? Math.abs(Math.sin(Date.now() * 0.03)) * 6 * zoom : 0;
+        const bodyY = cy - 3 * zoom - hop;
+        ctx2.fillStyle = "#b45309";
+        ctx2.beginPath();
+        ctx2.ellipse(cx, bodyY, 3.2 * zoom, 2.2 * zoom, 0, 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.beginPath();
+        ctx2.arc(cx + 2.5 * zoom, bodyY - 1.8 * zoom, 1.6 * zoom, 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.strokeStyle = "#78350f";
+        ctx2.lineWidth = 1 * zoom;
+        ctx2.beginPath();
+        ctx2.moveTo(cx + 2 * zoom, bodyY - 3 * zoom);
+        ctx2.lineTo(cx + 1.5 * zoom, bodyY - 6.5 * zoom);
+        ctx2.moveTo(cx + 3 * zoom, bodyY - 3 * zoom);
+        ctx2.lineTo(cx + 3.8 * zoom, bodyY - 6.5 * zoom);
+        ctx2.stroke();
+      } else if (species === "boar") {
+        ctx2.beginPath();
+        ctx2.ellipse(cx, cy + 2 * zoom, 6.8 * zoom, 3.2 * zoom, 0, 0, Math.PI * 2);
+        ctx2.fillStyle = "rgba(0,0,0,0.30)";
+        ctx2.fill();
+        let hop = a.state === "fleeing" ? Math.abs(Math.sin(Date.now() * 0.02)) * 3 * zoom : 0;
+        const bodyY = cy - 5 * zoom - hop;
+        ctx2.fillStyle = "#291b15";
+        ctx2.beginPath();
+        ctx2.ellipse(cx, bodyY, 6.5 * zoom, 4.2 * zoom, 0, 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.fillStyle = "#3e2723";
+        ctx2.beginPath();
+        ctx2.moveTo(cx + 3 * zoom, bodyY + 1 * zoom);
+        ctx2.lineTo(cx + 8 * zoom, bodyY + 1.5 * zoom);
+        ctx2.lineTo(cx + 4 * zoom, bodyY - 3.5 * zoom);
+        ctx2.closePath();
+        ctx2.fill();
+        ctx2.strokeStyle = "#f8fafc";
+        ctx2.lineWidth = 1.2 * zoom;
+        ctx2.beginPath();
+        ctx2.moveTo(cx + 6 * zoom, bodyY + 1.5 * zoom);
+        ctx2.lineTo(cx + 7 * zoom, bodyY - 1.2 * zoom);
+        ctx2.stroke();
+      } else if (species === "bison") {
+        ctx2.beginPath();
+        ctx2.ellipse(cx, cy + 2 * zoom, 9.8 * zoom, 4.5 * zoom, 0, 0, Math.PI * 2);
+        ctx2.fillStyle = "rgba(0,0,0,0.35)";
+        ctx2.fill();
+        let hop = a.state === "fleeing" ? Math.abs(Math.sin(Date.now() * 0.015)) * 2 * zoom : 0;
+        const bodyY = cy - 7 * zoom - hop;
+        ctx2.fillStyle = "#1c1917";
+        ctx2.beginPath();
+        ctx2.ellipse(cx - 2 * zoom, bodyY + 1 * zoom, 7.5 * zoom, 5 * zoom, 0, 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.fillStyle = "#292524";
+        ctx2.beginPath();
+        ctx2.ellipse(cx + 2.5 * zoom, bodyY - 2.5 * zoom, 6.2 * zoom, 5.2 * zoom, 0, 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.beginPath();
+        ctx2.arc(cx + 6.5 * zoom, bodyY + 1 * zoom, 3.2 * zoom, 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.strokeStyle = "#e2e8f0";
+        ctx2.lineWidth = 1.5 * zoom;
+        ctx2.beginPath();
+        ctx2.moveTo(cx + 5.5 * zoom, bodyY - 1 * zoom);
+        ctx2.quadraticCurveTo(cx + 7.5 * zoom, bodyY - 5 * zoom, cx + 5 * zoom, bodyY - 6.5 * zoom);
+        ctx2.stroke();
+      } else {
+        ctx2.beginPath();
+        ctx2.ellipse(cx, cy + 2 * zoom, 6.5 * zoom, 3 * zoom, 0, 0, Math.PI * 2);
+        ctx2.fillStyle = "rgba(0,0,0,0.28)";
+        ctx2.fill();
+        let hop = a.state === "fleeing" ? Math.abs(Math.sin(Date.now() * 0.02)) * 4 * zoom : 0;
+        const bodyY = cy - 6 * zoom - hop;
+        ctx2.fillStyle = "#92400e";
+        ctx2.beginPath();
+        ctx2.ellipse(cx, bodyY, 6 * zoom, 3.5 * zoom, 0, 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.beginPath();
+        ctx2.moveTo(cx + 3 * zoom, bodyY);
+        ctx2.lineTo(cx + 7 * zoom, bodyY - 6 * zoom);
+        ctx2.lineTo(cx + 4 * zoom, bodyY - 6 * zoom);
+        ctx2.closePath();
+        ctx2.fill();
+        ctx2.beginPath();
+        ctx2.arc(cx + 6.5 * zoom, bodyY - 6.5 * zoom, 2.2 * zoom, 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.strokeStyle = "#451a03";
+        ctx2.lineWidth = 1.2 * zoom;
+        ctx2.beginPath();
+        ctx2.moveTo(cx + 6 * zoom, bodyY - 8 * zoom);
+        ctx2.lineTo(cx + 5 * zoom, bodyY - 12 * zoom);
+        ctx2.moveTo(cx + 7 * zoom, bodyY - 8 * zoom);
+        ctx2.lineTo(cx + 9 * zoom, bodyY - 12 * zoom);
+        ctx2.stroke();
+      }
       ctx2.restore();
     }
     drawHuman(h, selectedHumanId2) {
@@ -949,6 +1068,8 @@
         else if (h.carried.includes("Holz")) cIcon = "\u{1FAB5}";
         else if (h.carried.includes("Wasser")) cIcon = "\u{1F4A7}";
         else if (h.carried.includes("Beeren")) cIcon = "\u{1F347}";
+        else if (h.carried.includes("Wurzelknollen")) cIcon = "\u{1F954}";
+        else if (h.carried.includes("Flussfisch")) cIcon = "\u{1F41F}";
         else if (h.carried.includes("Wildbret")) cIcon = "\u{1F969}";
         ctx2.fillText(cIcon, cx + 6 * zoom, bodyY);
       }
@@ -956,12 +1077,15 @@
       if (h.state === "relieving") icon = "\u{1F4A8}";
       else if (h.state === "drinking") icon = "\u{1F4A7}";
       else if (h.state === "foraging") icon = "\u{1F347}";
+      else if (h.state === "digging") icon = "\u{1F954}";
+      else if (h.state === "fishing") icon = "\u{1F3A3}";
       else if (h.state === "mining") icon = "\u26CF\uFE0F";
       else if (h.state === "chopping") icon = "\u{1FA93}";
       else if (h.state === "hunting") icon = "\u{1F3F9}";
       else if (h.state === "building") icon = "\u{1F528}";
       else if (h.state === "resting") icon = "\u{1F525}";
       else if (h.state === "mating") icon = "\u2764\uFE0F";
+      else if (h.state === "migrating") icon = "\u26FA";
       else if (h.pregnancyTimer > 0) icon = "\u{1F930}";
       if (icon) {
         ctx2.font = `${Math.max(10, 11 * zoom)}px sans-serif`;
@@ -1068,6 +1192,68 @@
       curr = parent[curr];
     }
     return path.reverse();
+  }
+
+  // src/foraging.js
+  function findNearestBushWithBerries(map2, fromX, fromY) {
+    let nearestBush = null;
+    let minDist = 9999;
+    for (let y = 0; y < MAP_SIZE; y++) {
+      for (let x = 0; x < MAP_SIZE; x++) {
+        const p = map2[y][x].plant;
+        if (p && p.type === "bush" && p.berries > 0 && !p.isRootstock) {
+          const d = Math.hypot(x - fromX, y - fromY);
+          if (d < minDist) {
+            minDist = d;
+            nearestBush = { x, y };
+          }
+        }
+      }
+    }
+    return nearestBush;
+  }
+  function findNearestRootDigSpot(map2, fromX, fromY) {
+    let bestSpot = null;
+    let minDist = 9999;
+    for (let y = 1; y < MAP_SIZE - 1; y++) {
+      for (let x = 1; x < MAP_SIZE - 1; x++) {
+        const tile = map2[y][x];
+        if (tile.type === "grass" && !tile.plant && !tile.fire && !tile.shelter && (tile.roots > 0 || tile.npk >= 28)) {
+          const d = Math.hypot(x - fromX, y - fromY);
+          if (d < minDist) {
+            minDist = d;
+            bestSpot = { x, y };
+          }
+        }
+      }
+    }
+    return bestSpot;
+  }
+  function findNearestFishingSpot(map2, fromX, fromY) {
+    let bestSpot = null;
+    let minDist = 9999;
+    for (let y = 1; y < MAP_SIZE - 1; y++) {
+      for (let x = 1; x < MAP_SIZE - 1; x++) {
+        const tile = map2[y][x];
+        if (tile.type === "grass" || tile.type === "path" || tile.isFord) {
+          const neighbors = [
+            map2[y - 1] && map2[y - 1][x],
+            map2[y + 1] && map2[y + 1][x],
+            map2[y][x - 1],
+            map2[y][x + 1]
+          ];
+          const waterNeighbor = neighbors.find((n) => n && n.type === "water");
+          if (waterNeighbor) {
+            const d = Math.hypot(x - fromX, y - fromY);
+            if (d < minDist) {
+              minDist = d;
+              bestSpot = { x, y };
+            }
+          }
+        }
+      }
+    }
+    return bestSpot;
   }
 
   // src/human.js
@@ -1245,6 +1431,20 @@
           this.giveBirth(humans2, logEvent2);
         }
       }
+      if (this.state === "migrating") {
+        const dx = this.targetX - this.x;
+        const dy = this.targetY - this.y;
+        const dist = Math.hypot(dx, dy);
+        const speed = 1.25 * dt;
+        if (dist <= speed) {
+          this.x = this.targetX;
+          this.y = this.targetY;
+        } else {
+          this.x += dx / dist * speed;
+          this.y += dy / dist * speed;
+        }
+        return;
+      }
       if (this.state === "idle") {
         if (this.carried) {
           this.setMoveTarget(map2, CAMP_CENTER.x, CAMP_CENTER.y, "deliver_stock");
@@ -1273,6 +1473,20 @@
             this.playWithPeer(friend, map2, logEvent2);
             return;
           }
+          if (this.ageYears >= 8) {
+            const hare = animals2.find((a) => a.isAlive && a.species === "hare");
+            if (hare && Math.random() < 0.35) {
+              this.setMoveTarget(map2, hare.x, hare.y, "hunt_animal", hare);
+              return;
+            }
+            if (Math.random() < 0.4) {
+              const rootSpot = findNearestRootDigSpot(map2, this.x, this.y);
+              if (rootSpot) {
+                this.setMoveTarget(map2, rootSpot.x, rootSpot.y, "dig_roots");
+                return;
+              }
+            }
+          }
           if (Math.random() < 0.35) {
             const bush = this.findNearestBushWithBerries(map2);
             if (bush && Math.hypot(bush.x - CAMP_CENTER.x, bush.y - CAMP_CENTER.y) < 8) {
@@ -1288,7 +1502,7 @@
         } else if (this.needs.water < 55) {
           this.seekWater(map2);
         } else if (this.needs.food < 50) {
-          this.seekFood(map2);
+          this.seekFood(map2, animals2);
         } else if (this.needs.energy < 25) {
           this.seekShelterOrFire(map2, humans2);
         } else if (this.role.includes("J\xE4ger") && animals2.length > 0) {
@@ -1326,11 +1540,15 @@
           if (distToTarget <= 1.25) {
             this.x = this.huntTarget.x;
             this.y = this.huntTarget.y;
+            const meat = this.huntTarget.meatYield || 5;
+            const aIcon = this.huntTarget.icon || "\u{1F98C}";
+            const aName = this.huntTarget.name || "Wildtier";
             this.huntTarget.isAlive = false;
             this.carried = "\u{1F969} Wildbret";
+            this.lastMeatYield = meat;
             this.huntTarget = null;
-            this.utilityContributed += 35;
-            logEvent2(`\u{1F3F9} ${this.name} hat den fl\xFCchtenden Ur-Hirsch im Sprint eingeholt und erlegt! Frisches Fleisch f\xFCrs Lager.`);
+            this.utilityContributed += meat * 5;
+            logEvent2(`\u{1F3F9} ${this.name} hat ${aIcon} ${aName} erlegt! (+${meat} Fleisch f\xFCrs Lager)`);
             this.setMoveTarget(map2, CAMP_CENTER.x, CAMP_CENTER.y, "deliver_stock");
             return;
           }
@@ -1450,10 +1668,11 @@
       logEvent2(`\u{1FAA6} ${this.name} ist mit ${Math.floor(this.ageYears)} Jahren gestorben: ${cause}.`);
     }
     seekHunt(animals2, map2) {
-      const deer = animals2.find((a) => a.isAlive);
-      if (deer) {
-        this.setMoveTarget(map2, deer.x, deer.y, "hunt_animal", deer);
-      }
+      const liveAnimals = animals2.filter((a) => a.isAlive);
+      if (liveAnimals.length === 0) return;
+      liveAnimals.sort((a, b) => Math.hypot(a.x - this.x, a.y - this.y) - Math.hypot(b.x - this.x, b.y - this.y));
+      const target = liveAnimals[0];
+      this.setMoveTarget(map2, target.x, target.y, "hunt_animal", target);
     }
     seekRelief(map2) {
       let bestTarget = null;
@@ -1500,30 +1719,41 @@
         this.wander(map2);
       }
     }
-    seekFood(map2) {
-      if (campfireStock.food > 0 && Math.hypot(this.x - CAMP_CENTER.x, this.y - CAMP_CENTER.y) < 6) {
+    seekFood(map2, animals2 = []) {
+      if (campfireStock.food > 0 && Math.hypot(this.x - CAMP_CENTER.x, this.y - CAMP_CENTER.y) < 7) {
         this.setMoveTarget(map2, CAMP_CENTER.x, CAMP_CENTER.y, "eat_stock");
         return;
       }
-      let nearestBush = null;
-      let minDist = 9999;
-      for (let y = 0; y < MAP_SIZE; y++) {
-        for (let x = 0; x < MAP_SIZE; x++) {
-          const p = map2[y][x].plant;
-          if (p && p.type === "bush" && p.berries > 0) {
-            const d = Math.hypot(x - this.x, y - this.y);
-            if (d < minDist) {
-              minDist = d;
-              nearestBush = { x, y };
-            }
-          }
+      const bush = findNearestBushWithBerries(map2, this.x, this.y);
+      if (bush && Math.hypot(bush.x - this.x, bush.y - this.y) < 9) {
+        this.setMoveTarget(map2, bush.x, bush.y, "eat_bush");
+        return;
+      }
+      if (this.ageYears >= 10) {
+        const fishSpot = findNearestFishingSpot(map2, this.x, this.y);
+        if (fishSpot && Math.hypot(fishSpot.x - this.x, fishSpot.y - this.y) < 9) {
+          this.setMoveTarget(map2, fishSpot.x, fishSpot.y, "fish_river");
+          return;
         }
       }
-      if (nearestBush) {
-        this.setMoveTarget(map2, nearestBush.x, nearestBush.y, "eat_bush");
-      } else {
-        this.wander(map2);
+      const rootSpot = findNearestRootDigSpot(map2, this.x, this.y);
+      if (rootSpot && Math.hypot(rootSpot.x - this.x, rootSpot.y - this.y) < 10) {
+        this.setMoveTarget(map2, rootSpot.x, rootSpot.y, "dig_roots");
+        return;
       }
+      if (this.ageYears >= 12 && animals2 && animals2.some((a) => a.isAlive)) {
+        this.seekHunt(animals2, map2);
+        return;
+      }
+      if (bush) {
+        this.setMoveTarget(map2, bush.x, bush.y, "eat_bush");
+        return;
+      }
+      if (rootSpot) {
+        this.setMoveTarget(map2, rootSpot.x, rootSpot.y, "dig_roots");
+        return;
+      }
+      this.wander(map2);
     }
     seekShelterOrFire(map2, humans2 = []) {
       const availableShelters = [];
@@ -1620,10 +1850,26 @@
           return;
         }
       }
-      if (campfireStock.food < 5) {
-        let bush = this.findNearestBushWithBerries(map2);
+      if (campfireStock.food < 6) {
+        const bush = findNearestBushWithBerries(map2, this.x, this.y);
         if (bush) {
           this.setMoveTarget(map2, bush.x, bush.y, "haul_food");
+          return;
+        }
+        if (this.ageYears >= 12) {
+          const fishSpot = findNearestFishingSpot(map2, this.x, this.y);
+          if (fishSpot) {
+            this.setMoveTarget(map2, fishSpot.x, fishSpot.y, "fish_river");
+            return;
+          }
+        }
+        const rootSpot = findNearestRootDigSpot(map2, this.x, this.y);
+        if (rootSpot) {
+          this.setMoveTarget(map2, rootSpot.x, rootSpot.y, "dig_roots");
+          return;
+        }
+        if (this.ageYears >= 12 && animals2 && animals2.some((a) => a.isAlive)) {
+          this.seekHunt(animals2, map2);
           return;
         }
       }
@@ -1703,6 +1949,12 @@
       } else if (this.actionIntent === "chop_tree") {
         this.state = "chopping";
         this.stateTimer = 4.5;
+      } else if (this.actionIntent === "dig_roots") {
+        this.state = "digging";
+        this.stateTimer = 3.2;
+      } else if (this.actionIntent === "fish_river") {
+        this.state = "fishing";
+        this.stateTimer = 4;
       } else if (this.actionIntent === "haul_food") {
         const tile = map2[Math.round(this.y)][Math.round(this.x)];
         if (tile && tile.plant && tile.plant.berries > 0) {
@@ -1768,13 +2020,22 @@
         } else if (this.carried === "\u{1F347} Beeren") {
           campfireStock.food++;
           this.utilityContributed += 8;
+        } else if (this.carried === "\u{1F954} Wurzelknollen") {
+          campfireStock.food += 2;
+          this.utilityContributed += 10;
+          logEvent2(`\u{1F954} ${this.name} liefert nahrhafte Knollen/Wurzeln (+2 Vorrat).`);
+        } else if (this.carried === "\u{1F41F} Flussfisch") {
+          campfireStock.food += 2;
+          this.utilityContributed += 12;
+          logEvent2(`\u{1F41F} ${this.name} bringt frischen Fisch ans Lagerfeuer (+2 Vorrat).`);
         } else if (this.carried === "\u{1F4A7} Wasser") {
           campfireStock.water++;
           this.utilityContributed += 8;
         } else if (this.carried === "\u{1F969} Wildbret") {
-          campfireStock.food += 5;
-          this.utilityContributed += 35;
-          logEvent2(`\u{1F356} ${this.name} bringt frisches Fleisch ins Lager! Vorrat +5.`);
+          const yieldAmt = this.lastMeatYield || 5;
+          campfireStock.food += yieldAmt;
+          this.utilityContributed += yieldAmt * 5;
+          logEvent2(`\u{1F356} ${this.name} bringt frisches Fleisch ins Lager! Vorrat +${yieldAmt}.`);
         }
         this.carried = null;
         this.state = "idle";
@@ -1821,12 +2082,31 @@
     finishAction(map2, animals2, logEvent2) {
       if (this.state === "hunting") {
         if (this.huntTarget) {
+          const meat = this.huntTarget.meatYield || 5;
+          const aName = this.huntTarget.name || "Wild";
           this.huntTarget.isAlive = false;
           this.carried = "\u{1F969} Wildbret";
+          this.lastMeatYield = meat;
           this.setMoveTarget(map2, CAMP_CENTER.x, CAMP_CENTER.y, "deliver_stock");
-          logEvent2(`\u{1F3F9} ${this.name} hat den Ur-Hirsch erlegt! Er tr\xE4gt das Fleisch ins Lager.`);
+          logEvent2(`\u{1F3F9} ${this.name} hat ein ${aName} erlegt! Er tr\xE4gt das Fleisch (${meat} Vorrat) ins Lager.`);
           return;
         }
+      } else if (this.state === "digging") {
+        const gx = Math.round(this.x);
+        const gy = Math.round(this.y);
+        const t = map2[gy] && map2[gy][gx];
+        if (t) {
+          t.roots = Math.max(0, (t.roots || 1) - 1);
+        }
+        this.carried = "\u{1F954} Wurzelknollen";
+        this.setMoveTarget(map2, CAMP_CENTER.x, CAMP_CENTER.y, "deliver_stock");
+        logEvent2(`\u{1F954} ${this.name} hat nahrhafte Wurzelknollen ausgegraben.`);
+        return;
+      } else if (this.state === "fishing") {
+        this.carried = "\u{1F41F} Flussfisch";
+        this.setMoveTarget(map2, CAMP_CENTER.x, CAMP_CENTER.y, "deliver_stock");
+        logEvent2(`\u{1F41F} ${this.name} hat am Flussufer einen Fisch erbeutet!`);
+        return;
       } else if (this.state === "relieving") {
         this.needs.bladder = 0;
         const gx = Math.round(this.x);
@@ -2131,25 +2411,88 @@
 
   // src/wildlife.js
   var nextAnimalId = 1;
+  var ANIMAL_SPECIES = {
+    deer: {
+      species: "deer",
+      name: "Ur-Hirsch",
+      icon: "\u{1F98C}",
+      meatYield: 5,
+      maxStamina: 100,
+      speedRun: 2.3,
+      speedWalk: 0.8,
+      fleeDist: 5.5,
+      toughness: 1,
+      // Standard Hetzjagd
+      habitat: "all"
+    },
+    boar: {
+      species: "boar",
+      name: "Wildschwein",
+      icon: "\u{1F417}",
+      meatYield: 7,
+      maxStamina: 120,
+      speedRun: 1.85,
+      speedWalk: 0.7,
+      fleeDist: 4.5,
+      toughness: 1,
+      // Wühlt nach Eicheln/Wurzeln im Wald
+      habitat: "forest"
+    },
+    bison: {
+      species: "bison",
+      name: "Ur-Bison",
+      icon: "\u{1F9AC}",
+      meatYield: 15,
+      maxStamina: 240,
+      speedRun: 1.45,
+      speedWalk: 0.55,
+      fleeDist: 4,
+      toughness: 2,
+      // Sehr zäh! Benötigt 2 Jäger oder mehrfache Angriffe
+      habitat: "grass"
+    },
+    hare: {
+      species: "hare",
+      name: "Feldhase",
+      icon: "\u{1F407}",
+      meatYield: 2,
+      maxStamina: 40,
+      speedRun: 2.8,
+      speedWalk: 0.9,
+      fleeDist: 3.5,
+      toughness: 1,
+      // Wendig, schlägt Haken, ideal für Jugendliche
+      habitat: "grass"
+    }
+  };
   var WildAnimal = class {
-    constructor(x, y) {
+    constructor(x, y, speciesKey = "deer") {
       this.id = nextAnimalId++;
-      this.name = "Ur-Hirsch";
+      const spec = ANIMAL_SPECIES[speciesKey] || ANIMAL_SPECIES.deer;
+      this.species = spec.species;
+      this.name = spec.name;
+      this.icon = spec.icon;
+      this.meatYield = spec.meatYield;
+      this.maxStamina = spec.maxStamina;
+      this.stamina = spec.maxStamina;
+      this.speedRun = spec.speedRun;
+      this.speedWalk = spec.speedWalk;
+      this.fleeDist = spec.fleeDist;
+      this.toughness = spec.toughness;
       this.x = x;
       this.y = y;
       this.targetX = x;
       this.targetY = y;
       this.state = "grazing";
-      this.stateTimer = 4;
+      this.stateTimer = 3 + Math.random() * 3;
       this.isAlive = true;
-      this.meatYield = 5;
-      this.stamina = 100;
-      this.maxStamina = 100;
+      this.wounds = 0;
     }
     update(dt, map2, humans2, logEvent2) {
       if (!this.isAlive || dt === 0) return;
       let nearestHumanDist = 999;
       let predator = null;
+      let hunterCount = 0;
       for (const h of humans2) {
         if (h.isAlive) {
           const d = Math.hypot(h.x - this.x, h.y - this.y);
@@ -2157,18 +2500,21 @@
             nearestHumanDist = d;
             predator = h;
           }
+          if (h.actionIntent === "hunt_animal" && h.huntTarget === this && d < 7) {
+            hunterCount++;
+          }
         }
       }
-      const isTargeted = humans2.some((h) => h.isAlive && h.actionIntent === "hunt_animal" && h.huntTarget === this);
-      const fleeThreshold = isTargeted ? 6.5 : 4.5;
-      if (nearestHumanDist < fleeThreshold && this.state !== "fleeing" && this.state !== "exhausted") {
+      const isTargeted = hunterCount > 0;
+      const effectiveFleeDist = isTargeted ? this.fleeDist + 1.8 : this.fleeDist;
+      if (nearestHumanDist < effectiveFleeDist && this.state !== "fleeing" && this.state !== "exhausted") {
         this.state = "fleeing";
-        const angle = Math.atan2(this.y - predator.y, this.x - predator.x);
-        const fX = this.x + Math.cos(angle) * 5;
-        const fY = this.y + Math.sin(angle) * 5;
+        const angle = Math.atan2(this.y - predator.y, this.x - predator.x) + (Math.random() - 0.5) * 0.4;
+        const fX = this.x + Math.cos(angle) * (this.species === "hare" ? 3.5 : 5.5);
+        const fY = this.y + Math.sin(angle) * (this.species === "hare" ? 3.5 : 5.5);
         this.targetX = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(fX)));
         this.targetY = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(fY)));
-        logEvent2(`\u{1F98C} Der Ur-Hirsch wittert ${predator.name} und flieht in Panik!`);
+        logEvent2(`${this.icon} ${this.name} wittert ${predator.name} und flieht in Panik!`);
       }
       if (this.state === "fleeing") {
         const dx = this.targetX - this.x;
@@ -2176,23 +2522,24 @@
         const dist = Math.hypot(dx, dy);
         let speed;
         if (this.stamina > 20) {
-          speed = 2.4 * dt;
-          this.stamina = Math.max(0, this.stamina - dt * 14);
+          speed = this.speedRun * dt;
+          const drain = this.species === "hare" ? 18 : this.species === "bison" ? 8 : 13;
+          this.stamina = Math.max(0, this.stamina - dt * drain);
         } else {
-          speed = 1.25 * dt;
-          this.stamina = Math.max(0, this.stamina - dt * 6);
+          speed = this.speedRun * 0.55 * dt;
+          this.stamina = Math.max(0, this.stamina - dt * 5);
         }
         if (this.stamina <= 3) {
           this.state = "exhausted";
-          this.stateTimer = 2.5;
-          logEvent2(`\u{1F98C} Der Ur-Hirsch ist von der Hetzjagd v\xF6llig ersch\xF6pft und verlangsamt!`);
+          this.stateTimer = this.species === "bison" ? 1.8 : 2.5;
+          logEvent2(`${this.icon} ${this.name} ist von der Hetzjagd v\xF6llig ersch\xF6pft und verlangsamt!`);
         } else if (dist < speed) {
           this.x = this.targetX;
           this.y = this.targetY;
-          if (nearestHumanDist < 5 && predator) {
-            const angle = Math.atan2(this.y - predator.y, this.x - predator.x);
-            const fX = this.x + Math.cos(angle) * 4;
-            const fY = this.y + Math.sin(angle) * 4;
+          if (nearestHumanDist < this.fleeDist + 0.5 && predator) {
+            const angle = Math.atan2(this.y - predator.y, this.x - predator.x) + (Math.random() - 0.5) * 0.5;
+            const fX = this.x + Math.cos(angle) * 4.5;
+            const fY = this.y + Math.sin(angle) * 4.5;
             this.targetX = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(fX)));
             this.targetY = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(fY)));
           } else {
@@ -2206,7 +2553,7 @@
       }
       if (this.state === "exhausted") {
         this.stateTimer -= dt;
-        this.stamina = Math.min(100, this.stamina + dt * 8);
+        this.stamina = Math.min(this.maxStamina, this.stamina + dt * 8);
         if (this.stateTimer <= 0) {
           this.state = "fleeing";
           if (predator) {
@@ -2220,7 +2567,7 @@
         const dx = this.targetX - this.x;
         const dy = this.targetY - this.y;
         const dist = Math.hypot(dx, dy);
-        const speed = 0.8 * dt;
+        const speed = this.speedWalk * dt;
         if (dist < speed) {
           this.x = this.targetX;
           this.y = this.targetY;
@@ -2232,14 +2579,20 @@
         }
       }
       if (this.state === "grazing") {
-        this.stamina = Math.min(100, this.stamina + dt * 10);
+        this.stamina = Math.min(this.maxStamina, this.stamina + dt * 10);
         this.stateTimer -= dt;
         const gx = Math.round(this.x);
         const gy = Math.round(this.y);
         const curTile = map2[gy] && map2[gy][gx];
-        if (curTile && curTile.plant && curTile.plant.type === "bush") {
-          if (curTile.plant.berries > 0 && Math.random() < 0.15 * dt) {
-            curTile.plant.berries--;
+        if (curTile) {
+          if (this.species === "boar") {
+            if (curTile.npk < 50 && Math.random() < 0.05 * dt) {
+              curTile.npk = Math.min(60, curTile.npk + 2);
+            }
+          } else if (curTile.plant && curTile.plant.type === "bush" && curTile.plant.berries > 0) {
+            if (Math.random() < 0.12 * dt) {
+              curTile.plant.berries--;
+            }
           }
         }
         if (this.stateTimer <= 0) {
@@ -2255,7 +2608,7 @@
     }
   };
   function maybeSpawnWildAnimal(animals2, humans2, logEvent2) {
-    if (animals2.length >= 2 || Math.random() > 3e-3) return;
+    if (animals2.length >= 4 || Math.random() > 4e-3) return;
     const side = Math.floor(Math.random() * 4);
     let sx = 1, sy = 1;
     if (side === 0) {
@@ -2272,13 +2625,176 @@
       sy = Math.floor(Math.random() * MAP_SIZE);
     }
     for (const h of humans2) {
-      if (h.isAlive && Math.hypot(h.x - sx, h.y - sy) < 8) {
+      if (h.isAlive && Math.hypot(h.x - sx, h.y - sy) < 7) {
         return;
       }
     }
-    const deer = new WildAnimal(sx, sy);
-    animals2.push(deer);
-    logEvent2(`\u{1F98C} Ein wilder Ur-Hirsch hat am Rand das Tal betreten!`);
+    const roll = Math.random();
+    let speciesKey = "deer";
+    if (roll < 0.35) speciesKey = "deer";
+    else if (roll < 0.6) speciesKey = "boar";
+    else if (roll < 0.8) speciesKey = "bison";
+    else speciesKey = "hare";
+    const animal = new WildAnimal(sx, sy, speciesKey);
+    animals2.push(animal);
+    logEvent2(`${animal.icon} Ein wildes Exemplar (${animal.name}) betritt das Flusstal!`);
+  }
+
+  // src/migration.js
+  var migrationState = {
+    isMigrating: false,
+    phase: "idle",
+    // 'idle' | 'gathering' | 'marching' | 'transitioning'
+    timer: 0,
+    pressure: 0,
+    pressureDetails: { food: 0, wood: 0, hunger: 0 },
+    migrationsCount: 0,
+    announcement: null,
+    announcementTimer: 0
+  };
+  function computeEcologicalPressure(map2, humans2, animals2, campfireStock2) {
+    const livingHumans = humans2.filter((h) => h.isAlive);
+    if (livingHumans.length === 0) return 0;
+    let availableBerries = 0;
+    let availableRoots = 0;
+    let adultTrees = 0;
+    for (let y = 0; y < MAP_SIZE; y++) {
+      for (let x = 0; x < MAP_SIZE; x++) {
+        const t = map2[y][x];
+        if (t.plant) {
+          if (t.plant.type === "bush" && !t.plant.isRootstock) {
+            availableBerries += t.plant.berries || 0;
+          } else if (t.plant.type === "tree" && t.plant.stage === 3) {
+            adultTrees++;
+          }
+        }
+        if (t.roots && t.roots > 0) availableRoots += t.roots;
+      }
+    }
+    const livingAnimals = animals2.filter((a) => a.isAlive).length;
+    const hungryCount = livingHumans.filter((h) => 100 - h.needs.food > 60).length;
+    const hungerRatio = hungryCount / livingHumans.length;
+    const totalFoodScore = Math.max(0, 100 - (campfireStock2.food * 12 + availableBerries * 6 + availableRoots * 4 + livingAnimals * 10));
+    const woodScore = Math.max(0, 100 - (campfireStock2.wood * 10 + adultTrees * 6));
+    const hungerScore = Math.min(100, Math.round(hungerRatio * 100));
+    const weightedPressure = Math.min(100, Math.round(
+      totalFoodScore * 0.45 + hungerScore * 0.4 + woodScore * 0.15
+    ));
+    migrationState.pressure = weightedPressure;
+    migrationState.pressureDetails = {
+      food: totalFoodScore,
+      hunger: hungerScore,
+      wood: woodScore,
+      berries: availableBerries,
+      trees: adultTrees,
+      animals: livingAnimals
+    };
+    return weightedPressure;
+  }
+  function startMigration(humans2, logEvent2) {
+    if (migrationState.isMigrating) return;
+    migrationState.isMigrating = true;
+    migrationState.phase = "gathering";
+    migrationState.timer = 4;
+    migrationState.announcement = "\u26FA DIE HORDE BRICHT AUF: Die Ressourcen des Tals sind ersch\xF6pft. Der Stamm formiert sich zum Weiterzug!";
+    migrationState.announcementTimer = 7;
+    logEvent2(`\u26FA AUFBRUCH! Der Clan packt Faustkeile und Vorr\xE4te. M\xFCtter nehmen die Kinder huckepack. Das Tal wird verlassen.`);
+    for (const h of humans2) {
+      if (h.isAlive) {
+        h.state = "migrating";
+        h.targetX = CAMP_CENTER.x + (Math.random() * 2 - 1);
+        h.targetY = CAMP_CENTER.y + (Math.random() * 2 - 1);
+      }
+    }
+  }
+  function updateMigration(dt, map2, humans2, animals2, campfireStock2, fireState2, advanceYearCallback, logEvent2) {
+    if (migrationState.announcementTimer > 0) {
+      migrationState.announcementTimer -= dt;
+      if (migrationState.announcementTimer <= 0) {
+        migrationState.announcement = null;
+      }
+    }
+    if (!migrationState.isMigrating) {
+      if (migrationState.pressure >= 88 && Math.random() < 0.05 * dt) {
+        startMigration(humans2, logEvent2);
+      }
+      return map2;
+    }
+    migrationState.timer -= dt;
+    if (migrationState.phase === "gathering") {
+      if (migrationState.timer <= 0) {
+        migrationState.phase = "marching";
+        migrationState.timer = 5;
+        logEvent2(`\u{1F6B6} Geschlossener Zug: Die Horde wandert gemeinsam dem \xF6stlichen Bergpass entgegen.`);
+        for (const h of humans2) {
+          if (h.isAlive) {
+            h.state = "migrating";
+            h.targetX = MAP_SIZE - 1;
+            h.targetY = 12 + (Math.random() * 4 - 2);
+          }
+        }
+      }
+    } else if (migrationState.phase === "marching") {
+      if (migrationState.timer <= 0) {
+        migrationState.phase = "transitioning";
+        return executeMigrationArrival(map2, humans2, animals2, campfireStock2, fireState2, advanceYearCallback, logEvent2);
+      }
+    }
+    return map2;
+  }
+  function executeMigrationArrival(oldMap, humans2, animals2, campfireStock2, fireState2, advanceYearCallback, logEvent2) {
+    migrationState.migrationsCount++;
+    migrationState.isMigrating = false;
+    migrationState.phase = "idle";
+    const newMap = createMap();
+    if (typeof advanceYearCallback === "function") {
+      advanceYearCallback(1);
+    }
+    const oldFireTile = oldMap[CAMP_CENTER.y] && oldMap[CAMP_CENTER.y][CAMP_CENTER.x];
+    const oldIntensity = oldFireTile && oldFireTile.fire ? oldFireTile.fire.intensity : fireState2.intensity;
+    const newCenterTile = newMap[CAMP_CENTER.y][CAMP_CENTER.x];
+    if (oldIntensity > 15) {
+      newCenterTile.type = "fire";
+      newCenterTile.plant = null;
+      newCenterTile.fire = {
+        intensity: 95,
+        woodBurnTimer: 0,
+        wood: 2,
+        isCampCenter: true
+      };
+      fireState2.intensity = 95;
+      logEvent2(`\u{1F525} DIE GLUT HAT \xDCBERLEBT! Der im Zunderpilz geh\xFCtete Funke entfacht sofort das neue Stammesfeuer.`);
+    } else {
+      newCenterTile.type = "grass";
+      newCenterTile.fire = null;
+      fireState2.intensity = 0;
+      logEvent2(`\u2744\uFE0F KALTES LAGER: Der Clan hatte keine Glut mehr. Das Feuer muss m\xFChsam neu geschlagen werden.`);
+    }
+    const livingHumans = humans2.filter((h) => h.isAlive);
+    for (let i = 0; i < livingHumans.length; i++) {
+      const h = livingHumans[i];
+      h.x = 2 + i % 3;
+      h.y = 11 + Math.floor(i / 3);
+      h.targetX = CAMP_CENTER.x;
+      h.targetY = CAMP_CENTER.y;
+      h.state = "idle";
+      h.actionIntent = "explore";
+      h.needs.food = Math.max(35, h.needs.food - 15);
+      h.needs.energy = Math.max(45, h.needs.energy - 10);
+      h.ageYears += 1;
+    }
+    animals2.length = 0;
+    for (let i = 0; i < 3; i++) {
+      maybeSpawnWildAnimal(animals2, livingHumans, () => {
+      });
+    }
+    campfireStock2.wood = Math.max(3, campfireStock2.wood);
+    campfireStock2.food = Math.max(3, campfireStock2.food);
+    campfireStock2.stone = Math.max(2, campfireStock2.stone);
+    migrationState.announcement = `\u{1F304} NEUES FLUSSTAL ERREICHT! Nach Monaten der Wanderung schl\xE4gt die Sippe ihr Lager in frischen Jagdgr\xFCnden auf.`;
+    migrationState.announcementTimer = 8;
+    logEvent2(`\u{1F304} NEUES LAND: Unber\xFChrte Beerenstr\xE4ucher, klares Wasser und frisches Wildbret umgeben den Clan.`);
+    return newMap;
   }
 
   // src/main.js
@@ -2287,6 +2803,11 @@
   var container = document.getElementById("viewport-container");
   var eventTicker = document.getElementById("event-ticker");
   var inspectorBox = document.getElementById("inspector-box");
+  var pressureValEl = document.getElementById("pressure-val");
+  var pressureFillEl = document.getElementById("pressure-fill");
+  var pressureDescEl = document.getElementById("pressure-desc");
+  var btnMigrateEl = document.getElementById("btn-migrate");
+  var migrationBannerEl = document.getElementById("migration-banner");
   var worldYearEl = document.getElementById("world-year");
   var elapsedYearsEl = document.getElementById("elapsed-years");
   var simSeasonEl = document.getElementById("sim-season");
@@ -2498,6 +3019,40 @@
     if (demoAgeEl) demoAgeEl.innerText = avgAgeStr;
     if (demoAgeSubEl) demoAgeSubEl.innerText = spanStr;
     renderOrUpdateCards(humans);
+    computeEcologicalPressure(map, humans, animals, campfireStock);
+    const pressure = migrationState.pressure;
+    if (pressureValEl) pressureValEl.innerText = `${pressure}%`;
+    if (pressureFillEl) pressureFillEl.style.width = `${pressure}%`;
+    if (pressureDescEl) {
+      if (pressure < 35) pressureDescEl.innerText = "Zustand: Reichhaltig & fruchtbar \u{1F331}";
+      else if (pressure < 65) pressureDescEl.innerText = "Zustand: Ressourcen schwinden \u{1F342}";
+      else if (pressure < 85) pressureDescEl.innerText = "Zustand: Nahrungsknappheit droht \u26A0\uFE0F";
+      else pressureDescEl.innerText = "Zustand: \xDCberweidet! Not treibt zur Wanderung \u{1F6A8}";
+    }
+    if (btnMigrateEl) {
+      if (migrationState.isMigrating) {
+        btnMigrateEl.innerText = "\u{1F6B6} Horde auf Wanderschaft...";
+        btnMigrateEl.classList.remove("urgent");
+        btnMigrateEl.disabled = true;
+      } else {
+        btnMigrateEl.disabled = false;
+        if (pressure >= 75) {
+          btnMigrateEl.innerText = "\u26FA In neues Land aufbrechen! (Not)";
+          btnMigrateEl.classList.add("urgent");
+        } else {
+          btnMigrateEl.innerText = "\u26FA In neues Tal weiterziehen";
+          btnMigrateEl.classList.remove("urgent");
+        }
+      }
+    }
+    if (migrationBannerEl) {
+      if (migrationState.announcement) {
+        migrationBannerEl.innerText = migrationState.announcement;
+        migrationBannerEl.classList.remove("hidden");
+      } else {
+        migrationBannerEl.classList.add("hidden");
+      }
+    }
   }
   function selectHuman(id, fromCardClick = false) {
     selectedHumanId = id;
@@ -2550,6 +3105,11 @@
       simSpeed = parseFloat(btn.dataset.speed);
     });
   });
+  if (btnMigrateEl) {
+    btnMigrateEl.addEventListener("click", () => {
+      startMigration(humans, logEvent);
+    });
+  }
   var isDragging = false;
   var downClientX = 0;
   var downClientY = 0;
@@ -2698,6 +3258,9 @@
       elapsedYears += dtSec / 50;
     }
     updateEcology(map, dtSec, logEvent);
+    map = updateMigration(dtSec, map, humans, animals, campfireStock, fireState, (addY) => {
+      elapsedYears += addY;
+    }, logEvent);
     maybeSpawnWildAnimal(animals, humans, logEvent);
     for (let i = animals.length - 1; i >= 0; i--) {
       const a = animals[i];

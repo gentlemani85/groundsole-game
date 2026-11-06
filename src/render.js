@@ -238,6 +238,28 @@ export class Renderer {
     const s = plant.stage;
 
     ctx.save();
+
+    // Ruhender Wurzelstock (nach Verblühen/Alterung)
+    if (plant.isRootstock) {
+      ctx.strokeStyle = '#5c3a21';
+      ctx.lineWidth = 1.5 * zoom;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy + 1 * zoom);
+      ctx.lineTo(cx - 3 * zoom, cy - 4 * zoom);
+      ctx.moveTo(cx, cy + 1 * zoom);
+      ctx.lineTo(cx + 3 * zoom, cy - 5 * zoom);
+      ctx.moveTo(cx, cy + 1 * zoom);
+      ctx.lineTo(cx - 0.5 * zoom, cy - 6 * zoom);
+      ctx.stroke();
+
+      ctx.fillStyle = '#78350f';
+      ctx.beginPath();
+      ctx.arc(cx, cy + 1 * zoom, 2 * zoom, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      return;
+    }
+
     const baseR = (3.2 + s * 2.8) * zoom;
 
     ctx.beginPath();
@@ -274,6 +296,8 @@ export class Renderer {
       if (plant.berries >= 1) ctx.arc(cx - 3 * zoom, cy - baseR + 1 * zoom, berryR, 0, Math.PI * 2);
       if (plant.berries >= 2) ctx.arc(cx + 3 * zoom, cy - baseR - 2 * zoom, berryR, 0, Math.PI * 2);
       if (plant.berries >= 3) ctx.arc(cx, cy - baseR - 6 * zoom, berryR, 0, Math.PI * 2);
+      if (plant.berries >= 4) ctx.arc(cx - 2 * zoom, cy - baseR - 4 * zoom, berryR, 0, Math.PI * 2);
+      if (plant.berries >= 5) ctx.arc(cx + 2 * zoom, cy - baseR - 5 * zoom, berryR, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.fillStyle = '#fca5a5';
@@ -658,38 +682,132 @@ export class Renderer {
     const cy = pos.y + (TILE_H / 2) * zoom;
 
     ctx.save();
-    ctx.beginPath();
-    ctx.ellipse(cx, cy + 2 * zoom, 6.5 * zoom, 3 * zoom, 0, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0,0,0,0.28)';
-    ctx.fill();
+    const species = a.species || 'deer';
 
-    let hop = (a.state === 'fleeing') ? Math.abs(Math.sin(Date.now() * 0.02)) * 4 * zoom : 0;
-    const bodyY = cy - 6 * zoom - hop;
+    if (species === 'hare') {
+      // 🐇 Flinker Feldhase (klein, wendig, lange Ohren)
+      ctx.beginPath();
+      ctx.ellipse(cx, cy + 1 * zoom, 3.2 * zoom, 1.8 * zoom, 0, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0,0,0,0.22)';
+      ctx.fill();
 
-    ctx.fillStyle = '#92400e';
-    ctx.beginPath();
-    ctx.ellipse(cx, bodyY, 6 * zoom, 3.5 * zoom, 0, 0, Math.PI * 2);
-    ctx.fill();
+      let hop = (a.state === 'fleeing') ? Math.abs(Math.sin(Date.now() * 0.03)) * 6 * zoom : 0;
+      const bodyY = cy - 3 * zoom - hop;
 
-    ctx.beginPath();
-    ctx.moveTo(cx + 3 * zoom, bodyY);
-    ctx.lineTo(cx + 7 * zoom, bodyY - 6 * zoom);
-    ctx.lineTo(cx + 4 * zoom, bodyY - 6 * zoom);
-    ctx.closePath();
-    ctx.fill();
+      ctx.fillStyle = '#b45309';
+      ctx.beginPath();
+      ctx.ellipse(cx, bodyY, 3.2 * zoom, 2.2 * zoom, 0, 0, Math.PI * 2);
+      ctx.fill();
 
-    ctx.beginPath();
-    ctx.arc(cx + 6.5 * zoom, bodyY - 6.5 * zoom, 2.2 * zoom, 0, Math.PI * 2);
-    ctx.fill();
+      ctx.beginPath();
+      ctx.arc(cx + 2.5 * zoom, bodyY - 1.8 * zoom, 1.6 * zoom, 0, Math.PI * 2);
+      ctx.fill();
 
-    ctx.strokeStyle = '#451a03';
-    ctx.lineWidth = 1.2 * zoom;
-    ctx.beginPath();
-    ctx.moveTo(cx + 6 * zoom, bodyY - 8 * zoom);
-    ctx.lineTo(cx + 5 * zoom, bodyY - 12 * zoom);
-    ctx.moveTo(cx + 7 * zoom, bodyY - 8 * zoom);
-    ctx.lineTo(cx + 9 * zoom, bodyY - 12 * zoom);
-    ctx.stroke();
+      ctx.strokeStyle = '#78350f';
+      ctx.lineWidth = 1.0 * zoom;
+      ctx.beginPath();
+      ctx.moveTo(cx + 2 * zoom, bodyY - 3 * zoom);
+      ctx.lineTo(cx + 1.5 * zoom, bodyY - 6.5 * zoom);
+      ctx.moveTo(cx + 3 * zoom, bodyY - 3 * zoom);
+      ctx.lineTo(cx + 3.8 * zoom, bodyY - 6.5 * zoom);
+      ctx.stroke();
+
+    } else if (species === 'boar') {
+      // 🐗 Stämmiges Wildschwein (dunkler Rumpf, Keiler-Schnauze, weiße Hauer)
+      ctx.beginPath();
+      ctx.ellipse(cx, cy + 2 * zoom, 6.8 * zoom, 3.2 * zoom, 0, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0,0,0,0.30)';
+      ctx.fill();
+
+      let hop = (a.state === 'fleeing') ? Math.abs(Math.sin(Date.now() * 0.02)) * 3 * zoom : 0;
+      const bodyY = cy - 5 * zoom - hop;
+
+      ctx.fillStyle = '#291b15';
+      ctx.beginPath();
+      ctx.ellipse(cx, bodyY, 6.5 * zoom, 4.2 * zoom, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#3e2723';
+      ctx.beginPath();
+      ctx.moveTo(cx + 3 * zoom, bodyY + 1 * zoom);
+      ctx.lineTo(cx + 8 * zoom, bodyY + 1.5 * zoom);
+      ctx.lineTo(cx + 4 * zoom, bodyY - 3.5 * zoom);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.strokeStyle = '#f8fafc';
+      ctx.lineWidth = 1.2 * zoom;
+      ctx.beginPath();
+      ctx.moveTo(cx + 6 * zoom, bodyY + 1.5 * zoom);
+      ctx.lineTo(cx + 7 * zoom, bodyY - 1.2 * zoom);
+      ctx.stroke();
+
+    } else if (species === 'bison') {
+      // 🦬 Mächtiger Ur-Bison (Buckel, Riesenrumpf, gebogene Hörner)
+      ctx.beginPath();
+      ctx.ellipse(cx, cy + 2 * zoom, 9.8 * zoom, 4.5 * zoom, 0, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.fill();
+
+      let hop = (a.state === 'fleeing') ? Math.abs(Math.sin(Date.now() * 0.015)) * 2 * zoom : 0;
+      const bodyY = cy - 7 * zoom - hop;
+
+      ctx.fillStyle = '#1c1917';
+      ctx.beginPath();
+      ctx.ellipse(cx - 2 * zoom, bodyY + 1 * zoom, 7.5 * zoom, 5.0 * zoom, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#292524';
+      ctx.beginPath();
+      ctx.ellipse(cx + 2.5 * zoom, bodyY - 2.5 * zoom, 6.2 * zoom, 5.2 * zoom, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(cx + 6.5 * zoom, bodyY + 1 * zoom, 3.2 * zoom, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.lineWidth = 1.5 * zoom;
+      ctx.beginPath();
+      ctx.moveTo(cx + 5.5 * zoom, bodyY - 1 * zoom);
+      ctx.quadraticCurveTo(cx + 7.5 * zoom, bodyY - 5 * zoom, cx + 5 * zoom, bodyY - 6.5 * zoom);
+      ctx.stroke();
+
+    } else {
+      // 🦌 Ur-Hirsch (schlank, hochbeinig, weitverzweigtes Geweih)
+      ctx.beginPath();
+      ctx.ellipse(cx, cy + 2 * zoom, 6.5 * zoom, 3 * zoom, 0, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0,0,0,0.28)';
+      ctx.fill();
+
+      let hop = (a.state === 'fleeing') ? Math.abs(Math.sin(Date.now() * 0.02)) * 4 * zoom : 0;
+      const bodyY = cy - 6 * zoom - hop;
+
+      ctx.fillStyle = '#92400e';
+      ctx.beginPath();
+      ctx.ellipse(cx, bodyY, 6 * zoom, 3.5 * zoom, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.moveTo(cx + 3 * zoom, bodyY);
+      ctx.lineTo(cx + 7 * zoom, bodyY - 6 * zoom);
+      ctx.lineTo(cx + 4 * zoom, bodyY - 6 * zoom);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(cx + 6.5 * zoom, bodyY - 6.5 * zoom, 2.2 * zoom, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = '#451a03';
+      ctx.lineWidth = 1.2 * zoom;
+      ctx.beginPath();
+      ctx.moveTo(cx + 6 * zoom, bodyY - 8 * zoom);
+      ctx.lineTo(cx + 5 * zoom, bodyY - 12 * zoom);
+      ctx.moveTo(cx + 7 * zoom, bodyY - 8 * zoom);
+      ctx.lineTo(cx + 9 * zoom, bodyY - 12 * zoom);
+      ctx.stroke();
+    }
 
     ctx.restore();
   }
@@ -780,6 +898,8 @@ export class Renderer {
       else if (h.carried.includes('Holz')) cIcon = '🪵';
       else if (h.carried.includes('Wasser')) cIcon = '💧';
       else if (h.carried.includes('Beeren')) cIcon = '🍇';
+      else if (h.carried.includes('Wurzelknollen')) cIcon = '🥔';
+      else if (h.carried.includes('Flussfisch')) cIcon = '🐟';
       else if (h.carried.includes('Wildbret')) cIcon = '🥩';
       ctx.fillText(cIcon, cx + 6 * zoom, bodyY);
     }
@@ -788,12 +908,15 @@ export class Renderer {
     if (h.state === 'relieving') icon = '💨';
     else if (h.state === 'drinking') icon = '💧';
     else if (h.state === 'foraging') icon = '🍇';
+    else if (h.state === 'digging') icon = '🥔';
+    else if (h.state === 'fishing') icon = '🎣';
     else if (h.state === 'mining') icon = '⛏️';
     else if (h.state === 'chopping') icon = '🪓';
     else if (h.state === 'hunting') icon = '🏹';
     else if (h.state === 'building') icon = '🔨';
     else if (h.state === 'resting') icon = '🔥';
     else if (h.state === 'mating') icon = '❤️';
+    else if (h.state === 'migrating') icon = '⛺';
     else if (h.pregnancyTimer > 0) icon = '🤰';
 
     if (icon) {

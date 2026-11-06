@@ -4,6 +4,7 @@ import { createMap, updateEcology } from './map.js';
 import { Renderer } from './render.js';
 import { createInitialHumans, maybeSpawnForeignWanderer } from './human.js';
 import { maybeSpawnWildAnimal } from './wildlife.js';
+import { migrationState, computeEcologicalPressure, startMigration, updateMigration } from './migration.js';
 
 // Setup DOM
 const canvas = document.getElementById('game-canvas');
@@ -11,6 +12,13 @@ const ctx = canvas.getContext('2d');
 const container = document.getElementById('viewport-container');
 const eventTicker = document.getElementById('event-ticker');
 const inspectorBox = document.getElementById('inspector-box');
+
+// Migration & Ökologie DOM-Elemente
+const pressureValEl = document.getElementById('pressure-val');
+const pressureFillEl = document.getElementById('pressure-fill');
+const pressureDescEl = document.getElementById('pressure-desc');
+const btnMigrateEl = document.getElementById('btn-migrate');
+const migrationBannerEl = document.getElementById('migration-banner');
 
 // Weltzeit & Demographie DOM-Elemente
 const worldYearEl = document.getElementById('world-year');
@@ -36,7 +44,7 @@ function logEvent(msg) {
 // State
 const camera = new Camera(canvas);
 const renderer = new Renderer(ctx, camera);
-const map = createMap();
+let map = createMap();
 const humans = createInitialHumans();
 const animals = [];
 
@@ -266,6 +274,44 @@ function updateUI() {
 
   // 3. Hominiden-Karten im Inspektor
   renderOrUpdateCards(humans);
+
+  // 4. Ökologischer Druck & Nomadische Migration
+  computeEcologicalPressure(map, humans, animals, campfireStock);
+  const pressure = migrationState.pressure;
+  if (pressureValEl) pressureValEl.innerText = `${pressure}%`;
+  if (pressureFillEl) pressureFillEl.style.width = `${pressure}%`;
+  if (pressureDescEl) {
+    if (pressure < 35) pressureDescEl.innerText = 'Zustand: Reichhaltig & fruchtbar 🌱';
+    else if (pressure < 65) pressureDescEl.innerText = 'Zustand: Ressourcen schwinden 🍂';
+    else if (pressure < 85) pressureDescEl.innerText = 'Zustand: Nahrungsknappheit droht ⚠️';
+    else pressureDescEl.innerText = 'Zustand: Überweidet! Not treibt zur Wanderung 🚨';
+  }
+  if (btnMigrateEl) {
+    if (migrationState.isMigrating) {
+      btnMigrateEl.innerText = '🚶 Horde auf Wanderschaft...';
+      btnMigrateEl.classList.remove('urgent');
+      btnMigrateEl.disabled = true;
+    } else {
+      btnMigrateEl.disabled = false;
+      if (pressure >= 75) {
+        btnMigrateEl.innerText = '⛺ In neues Land aufbrechen! (Not)';
+        btnMigrateEl.classList.add('urgent');
+      } else {
+        btnMigrateEl.innerText = '⛺ In neues Tal weiterziehen';
+        btnMigrateEl.classList.remove('urgent');
+      }
+    }
+  }
+
+  // 5. Großes Ankündigungs-Banner
+  if (migrationBannerEl) {
+    if (migrationState.announcement) {
+      migrationBannerEl.innerText = migrationState.announcement;
+      migrationBannerEl.classList.remove('hidden');
+    } else {
+      migrationBannerEl.classList.add('hidden');
+    }
+  }
 }
 
 // Direkte Hominiden-Selektion mit weichem Scrollsprung in die Sidebar
@@ -331,6 +377,12 @@ document.querySelectorAll('.speed-btn').forEach(btn => {
     simSpeed = parseFloat(btn.dataset.speed);
   });
 });
+
+if (btnMigrateEl) {
+  btnMigrateEl.addEventListener('click', () => {
+    startMigration(humans, logEvent);
+  });
+}
 
 // Kamera-Handling
 let isDragging = false;
@@ -499,6 +551,11 @@ function loop(now) {
 
   // 1. Ökologie & dezentrale Feuer-/Hütten-Thermodynamik
   updateEcology(map, dtSec, logEvent);
+
+  // 1.5 Nomadische Migration & Verlassen des übernutzten Tals
+  map = updateMigration(dtSec, map, humans, animals, campfireStock, fireState, (addY) => {
+    elapsedYears += addY;
+  }, logEvent);
 
   // 2. Wildtier-Spawn & Update
   maybeSpawnWildAnimal(animals, humans, logEvent);

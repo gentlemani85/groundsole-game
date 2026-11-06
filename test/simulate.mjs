@@ -6,6 +6,7 @@ import { MAP_SIZE, campfireStock, fireState } from '../src/config.js';
 import { createMap, updateEcology } from '../src/map.js';
 import { createInitialHumans, maybeSpawnForeignWanderer } from '../src/human.js';
 import { maybeSpawnWildAnimal } from '../src/wildlife.js';
+import { migrationState, computeEcologicalPressure, startMigration, updateMigration } from '../src/migration.js';
 
 console.log("▶ Starte biophysikalischen Homöostase-Test (1.500 Ticks)...");
 
@@ -73,6 +74,22 @@ if (finalLiving === 0) {
   console.error("❌ TEST FEHLGESCHLAGEN: Unkontrollierte Überpopulation (Malthusianischer Schock).");
   process.exit(1);
 } else {
+  // Test: Nomadische Migration (Tal-Wechsel)
+  console.log("▶ Teste nomadische Migration (Weiterzug bei Ressourcenknappheit)...");
+  const preMigLiving = humans.filter(h => h.isAlive).length;
+  startMigration(humans, logEvent);
+  let currentMap = map;
+  for (let step = 0; step < 120; step++) {
+    currentMap = updateMigration(0.1, currentMap, humans, animals, campfireStock, fireState, (y) => {}, logEvent);
+    if (!migrationState.isMigrating) break;
+  }
+  const postMigLiving = humans.filter(h => h.isAlive).length;
+  if (postMigLiving !== preMigLiving || migrationState.migrationsCount !== 1) {
+    console.error("❌ MIGRATIONS-TEST FEHLGESCHLAGEN: Clan ging bei der Wanderung verloren.");
+    process.exit(1);
+  }
+  console.log(`✅ MIGRATIONS-TEST BESTANDEN: Alle ${postMigLiving} Stammesmitglieder erreichten das neue Flusstal!`);
+
   console.log("✅ TEST BESTANDEN: Dynamische Homöostase und biophysikalisches Gleichgewicht gewahrt!");
   process.exit(0);
 }

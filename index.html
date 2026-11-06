@@ -9,6 +9,7 @@
 
   <div id="viewport-container">
     <div id="status-hint">Werkzeug wählen + Klick in Welt | Ziehen: Bewegen | Rad: Zoom</div>
+    <div id="migration-banner" class="migration-banner hidden"></div>
     <div id="event-ticker">Das Acheuléen-Diorama erwacht am Flussufer.</div>
     <canvas id="game-canvas"></canvas>
   </div>
@@ -48,13 +49,26 @@
         <span class="stock-val" id="stock-stone">3</span>
       </div>
       <div class="stock-item">
-        <span class="stock-label">🍇 Beeren</span>
+        <span class="stock-label">🍇 Nahrung</span>
         <span class="stock-val" id="stock-food">4</span>
       </div>
       <div class="stock-item">
         <span class="stock-label">💧 Wasser</span>
         <span class="stock-val" id="stock-water">3</span>
       </div>
+    </div>
+
+    <!-- Ökologischer Druck & Nomadische Migration -->
+    <div class="migration-card">
+      <div class="migration-header">
+        <span class="mig-title">🌍 Tal-Ressourcen & Druck</span>
+        <span class="mig-val" id="pressure-val">15%</span>
+      </div>
+      <div class="mig-bar-bg">
+        <div class="mig-bar-fill" id="pressure-fill" style="width: 15%"></div>
+      </div>
+      <div class="mig-info" id="pressure-desc">Zustand: Ausgewogen & fruchtbar</div>
+      <button id="btn-migrate" class="btn-migrate">⛺ In neues Land aufbrechen</button>
     </div>
 
     <div class="section-title">Umwelt-Werkzeuge (Randbedingungen)</div>
