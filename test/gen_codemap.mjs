@@ -97,4 +97,15 @@ for (const fsym of fileSymbols) {
 }
 
 fs.writeFileSync(outFile, md, 'utf8');
+
+// Automatischer Cache-Buster in index.html für sofortige GitHub-Pages-Aktualisierung
+const indexFile = path.join(rootDir, 'index.html');
+if (fs.existsSync(indexFile)) {
+  const buildVer = Date.now().toString(36);
+  let html = fs.readFileSync(indexFile, 'utf8');
+  html = html.replace(/href="style\.css(\?v=[^"]*)?"/, `href="style.css?v=${buildVer}"`);
+  html = html.replace(/src="bundle\.js(\?v=[^"]*)?"/, `src="bundle.js?v=${buildVer}"`);
+  fs.writeFileSync(indexFile, html, 'utf8');
+}
+
 console.log(`✅ CODE_MAP.md aktualisiert (${files.length} Module indiziert).`);

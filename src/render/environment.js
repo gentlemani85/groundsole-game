@@ -75,10 +75,10 @@ export const environmentRenderMethods = {
         cSummer = [114 - factor * 28, 116 - factor * 24, 86 - factor * 18];
       } else {
         // Fluss-Aue (Standard):
-        // Frühling = frisches, saftiges Maigrün
-        cSpring = [88 - factor * 56, 162 - factor * 58, 76 - factor * 46];
-        // Sommer = sonnenwarmes, leicht gold-olives Hochsommer-Gras
-        cSummer = [138 - factor * 76, 144 - factor * 62, 62 - factor * 40];
+        // Frühling = leuchtend frisches, saftiges Maigrün
+        cSpring = [70 - factor * 44, 174 - factor * 58, 68 - factor * 40];
+        // Sommer = sonnenwarmes, reifes Gold-Oliv-Sommergras
+        cSummer = [148 - factor * 72, 148 - factor * 58, 52 - factor * 34];
       }
 
       const cAutumn = [148 - factor * 58, 116 - factor * 48, 56 - factor * 32];
@@ -144,8 +144,13 @@ export const environmentRenderMethods = {
       this.drawWaterWaves(cx, cy);
     }
 
-    // Blumen (im Frühling in voller Blüte, im Sommer dezenter, zum Winter hin sanft ausblendend)
-    const flowerScale = w.spring * 1.35 + w.summer * 0.58 + w.autumn * 0.22;
+    // Fußabdrücke auf dem Boden (saisonal gefärbt, verblassen über Zeit)
+    if (tile.footprints && tile.footprints.length > 0 && tile.type !== 'water') {
+      this.drawFootprints(cx, cy, tile.footprints, w);
+    }
+
+    // Blumen (im Frühling in voller Blüte, im Sommer deutlich dezenter, zum Winter hin sanft ausblendend)
+    const flowerScale = w.spring * 1.45 + w.summer * 0.42 + w.autumn * 0.18;
     if (flowerScale > 0.1 && tile.type === 'grass' && tile.flowerDots && tile.flowerDots.length > 0 && !tile.plant && !tile.poop) {
       this.drawNaturalFlowers(cx, cy, tile.flowerDots, flowerScale);
     }
@@ -156,6 +161,53 @@ export const environmentRenderMethods = {
     }
 
     ctx.restore();
+  },
+
+  drawFootprints(cx, cy, footprints, w) {
+    const ctx = this.ctx;
+    const zoom = this.cam.zoom;
+    // Saisonale Spurfarbe:
+    // Frühling = feuchte dunkle Erde, Sommer = trockener Ockerstaub, Herbst = dunkler Torf, Winter = blaugrauer Schneedruck
+    const trackColor = blend4RGB(
+      [64, 48, 32],
+      [112, 86, 54],
+      [68, 48, 30],
+      [134, 156, 186],
+      w
+    );
+
+    for (const fp of footprints) {
+      const lifeRatio = Math.max(0, 1 - (fp.age / (fp.maxAge || 65)));
+      if (lifeRatio <= 0.02) continue;
+      const alpha = Math.min(1, lifeRatio * 1.35) * 0.78;
+      const s = (fp.scale || 1.0) * zoom;
+
+      ctx.save();
+      ctx.translate(cx + fp.lx * zoom, cy + fp.ly * zoom);
+      ctx.rotate(fp.angle || 0);
+      ctx.globalAlpha = alpha;
+
+      // Im Winter zarter weißer Schneerand um den Fußabdruck
+      if (w.winter > 0.25) {
+        ctx.fillStyle = `rgba(255, 255, 255, ${(w.winter * 0.55).toFixed(2)})`;
+        ctx.beginPath();
+        ctx.ellipse(0.9 * s, 0, 2.2 * s, 1.35 * s, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.fillStyle = trackColor;
+      // 1. Vorderfuß / Ballen (in Laufrichtung +X)
+      ctx.beginPath();
+      ctx.ellipse(1.0 * s, 0, 1.75 * s, 1.05 * s, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 2. Ferse (dahinter -X, leicht schmaler)
+      ctx.beginPath();
+      ctx.ellipse(-1.25 * s, 0, 1.15 * s, 0.82 * s, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+    }
   },
 
   drawWaterWaves(cx, cy) {

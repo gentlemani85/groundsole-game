@@ -225,13 +225,26 @@ export function createMap(biomeId = 'river_valley') {
         }
       }
 
-      // Pfad zum Wasser (initial)
+      // Anfängliche Fußspuren zum Flussufer (statt brauner Block-Kacheln)
       let isDesirePath = false;
       let trample = 0;
-      if (biome.id === 'river_valley' && y === CAMP_CENTER.y && x >= CAMP_CENTER.x && x <= 19) {
-        type = 'path';
-        isDesirePath = true;
-        trample = 90;
+      const footprints = [];
+      if (biome.id === 'river_valley' && y === CAMP_CENTER.y && x > CAMP_CENTER.x && x <= 18 && type === 'grass' && !plant) {
+        trample = 55;
+        const baseAngle = Math.atan2(0.5, 1.0); // Richtung Osten (+x) in Isometrie
+        for (let i = 0; i < 6; i++) {
+          const stepT = (i / 5) - 0.5;
+          const isLeft = (i % 2 === 0);
+          footprints.push({
+            lx: stepT * 18 + (Math.random() - 0.5) * 5,
+            ly: stepT * 9 + (isLeft ? -1.8 : 1.8) + (Math.random() - 0.5) * 3,
+            angle: baseAngle + (Math.random() - 0.5) * 0.25,
+            isLeft,
+            scale: 0.95,
+            age: Math.random() * 18,
+            maxAge: 65
+          });
+        }
       }
 
       // Zentrales Stammesfeuer am Camp-Zentrum (12, 12)
@@ -275,6 +288,7 @@ export function createMap(biomeId = 'river_valley') {
         poop: null,
         flowerDots: flowerDots,
         trample: trample,
+        footprints: footprints,
         isDesirePath: isDesirePath,
         fire: fireObj
       };
@@ -408,10 +422,19 @@ export function updateEcology(map, dtSec, logEvent) {
       }
 
       // ==========================================
-      // TRAMPELPFAD-RENATURIERUNG
+      // FUSSABDRÜCKE & PFAD-RENATURIERUNG
+      // Wenn längere Zeit niemand über eine Kachel läuft, verblassen die Fußabdrücke und verschwinden.
       // ==========================================
+      if (tile.footprints && tile.footprints.length > 0) {
+        for (let i = tile.footprints.length - 1; i >= 0; i--) {
+          tile.footprints[i].age += dtSec;
+          if (tile.footprints[i].age >= tile.footprints[i].maxAge) {
+            tile.footprints.splice(i, 1);
+          }
+        }
+      }
       if (tile.trample && tile.trample > 0) {
-        tile.trample = Math.max(0, tile.trample - dtSec * 0.35);
+        tile.trample = Math.max(0, tile.trample - dtSec * 0.45);
       }
       if (tile.type === 'path' && tile.isDesirePath && (!tile.trample || tile.trample <= 0)) {
         tile.type = 'grass';

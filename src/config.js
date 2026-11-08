@@ -56,7 +56,7 @@ export const SEASONS = [
 ];
 
 export const seasonState = {
-  elapsedYears: 0,
+  elapsedYears: 0.125,
   index: 0,
   key: 'spring',
   label: 'Frühling 🌱',
@@ -83,14 +83,17 @@ export function advanceSeasonClock(dtSec, logEvent = null) {
   seasonState.isAutumn = (newIndex === 2);
   seasonState.isWinter = (newIndex === 3);
 
-  // Kontinuierliche 4-Phasen-Interpolation zwischen den Jahreszeiten-Mitten (0.125, 0.375, 0.625, 0.875)
+  // Kontinuierliche 4-Phasen-Interpolation:
+  // Jede Jahreszeit zeigt in ihrer Kernphase ihre klare Charakteristik und blendet
+  // über eine weiche Smoothstep-Kurve stufenlos in die nächste Jahreszeit über.
   const yearPos = yearFrac * 4; // 0.0 bis 4.0
   const shifted = (yearPos - 0.5 + 4.0) % 4.0;
   const idxA = Math.floor(shifted) % 4;
   const idxB = (idxA + 1) % 4;
-  const rawT = shifted - Math.floor(shifted);
-  // Smoothstep (S-Kurve) für organischen Übergang ohne Sprung
-  const smoothT = rawT * rawT * (3 - 2 * rawT);
+  const rawT = shifted - Math.floor(shifted); // 0.0 (Mitte Saison A) bis 1.0 (Mitte Saison B)
+  // Sanftes Plateau in der Saisonmitte (0..0.18 und 0.82..1.0) + kontinuierlicher Übergang (0.18..0.82)
+  const clampedT = Math.max(0, Math.min(1, (rawT - 0.18) / 0.64));
+  const smoothT = clampedT * clampedT * (3 - 2 * clampedT);
 
   const keys = ['spring', 'summer', 'autumn', 'winter'];
   seasonState.weights = { spring: 0, summer: 0, autumn: 0, winter: 0 };

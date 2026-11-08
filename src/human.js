@@ -43,6 +43,8 @@ export class Human {
     this.state = 'idle';
     this.stateTimer = 0;
     this.path = [];
+    this.stepAccum = 0;
+    this.nextFootLeft = false;
   }
 
   setMoveTarget(map, tx, ty, intent, huntTarget = null) {
@@ -472,27 +474,21 @@ export class Human {
       const cx = Math.round(this.x);
       const cy = Math.round(this.y);
       const curTile = (map[cy] && map[cy][cx]);
-      const onPath = (curTile && curTile.type === 'path');
+      const onPath = Boolean(curTile && (curTile.type === 'path' || (curTile.trample && curTile.trample >= 35)));
       const inWater = (curTile && curTile.type === 'water');
 
-      // Trampelpfad-Mechanik: Nur freie Wiese ohne Bäume, Sträucher, Felsen oder Bauten wird zum Pfad!
-      // Sträucher und Bäume werden NIEMALS durch Schritte zertrampelt oder gelöscht.
+      // Organische Fußabdrücke statt kantiger Trampelpfad-Blöcke:
+      // Wenn viele Stammesmitglieder über eine Kachel laufen, sammeln sich dort entsprechend viele Fußspuren.
       if (curTile) {
-        if (!curTile.plant && curTile.type !== 'rock' && curTile.type !== 'fire' && curTile.type !== 'shelter') {
-          curTile.trample = Math.min(100, (curTile.trample || 0) + dt * 16);
-          if (curTile.type === 'grass' && curTile.trample >= 55) {
-            curTile.type = 'path';
-            curTile.isDesirePath = true;
-            curTile.flowerDots = [];
-          }
+        if (!curTile.plant && curTile.type !== 'rock' && curTile.type !== 'fire' && curTile.type !== 'shelter' && curTile.type !== 'water') {
+          curTile.trample = Math.min(100, (curTile.trample || 0) + dt * 14);
         } else if (curTile.plant) {
-          // Kachel mit Pflanze bleibt vor Pfad-Überprägung geschützt
           curTile.trample = 0;
         }
       }
 
       let terrainFactor = 1.0;
-      if (onPath) terrainFactor = 1.6;
+      if (onPath) terrainFactor = 1.45;
       else if (inWater) terrainFactor = 0.65;
 
       // Mutter ist durch das Tragen eines Säuglings (< 4 Jahre) langsamer
@@ -503,6 +499,40 @@ export class Human {
       const sprintFactor = isHuntingSprint ? 1.45 : 1.0;
       const injuryFactor = (this.injuredTimer > 0) ? 0.55 : 1.0; // Humpeln bei Jagdverletzung
       const speed = terrainFactor * sprintFactor * infantSpeedFactor * injuryFactor * (this.ageYears > 40 ? 0.78 : 1.0) * dt;
+
+      // Schrittzähler für echte Fußabdrücke entlang der Bewegungsrichtung
+      const stepDist = Math.min(dist, speed);
+      this.stepAccum = (this.stepAccum || 0) + stepDist;
+      if (this.stepAccum >= 0.30 && curTile && (curTile.type === 'grass' || curTile.type === 'path') && !curTile.plant) {
+        this.stepAccum = 0;
+        this.nextFootLeft = !this.nextFootLeft;
+        if (!curTile.footprints) curTile.footprints = [];
+        if (curTile.footprints.length >= 20) curTile.footprints.shift();
+
+        // Isometrischer Richtungsvektor für korrekte Fuß-Rotation am Bildschirm
+        const sdx = (dx - dy);
+        const sdy = (dx + dy) * 0.5;
+        const screenAngle = Math.atan2(sdy, sdx);
+
+        // Lokale Position auf der Kachel + Versatz für linken/rechten Fuß + natürliche Pfadstreuung
+        const fx = this.x - cx;
+        const fy = this.y - cy;
+        const sideSign = this.nextFootLeft ? -1 : 1;
+        const perpX = -Math.sin(screenAngle) * 2.2 * sideSign;
+        const perpY = Math.cos(screenAngle) * 1.4 * sideSign;
+        const lx = Math.max(-18, Math.min(18, (fx - fy) * 16 + perpX + (Math.random() - 0.5) * 7.5));
+        const ly = Math.max(-9, Math.min(9, (fx + fy) * 8 + perpY + (Math.random() - 0.5) * 4.0));
+
+        curTile.footprints.push({
+          lx,
+          ly,
+          angle: screenAngle + (Math.random() - 0.5) * 0.16,
+          isLeft: this.nextFootLeft,
+          scale: this.ageYears < 12 ? 0.72 : 1.0,
+          age: 0,
+          maxAge: 65
+        });
+      }
 
       if (dist <= speed) {
         this.x = targetWp.x;

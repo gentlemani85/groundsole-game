@@ -506,16 +506,30 @@ function applyToolAtScreen(sx, sy) {
       tile.trample = 0;
       tile.isDesirePath = false;
     } else if (activeTool === 'path') {
-      tile.type = 'path';
-      tile.isFord = false;
+      tile.type = 'grass';
+      tile.isFord = true;
       tile.plant = null;
-      tile.trample = 100;
+      tile.trample = 85;
       tile.isDesirePath = false;
+      if (!tile.footprints) tile.footprints = [];
+      for (let i = 0; i < 8; i++) {
+        tile.footprints.push({
+          lx: (Math.random() - 0.5) * 26,
+          ly: (Math.random() - 0.5) * 13,
+          angle: (Math.random() - 0.5) * Math.PI,
+          isLeft: (i % 2 === 0),
+          scale: 0.95,
+          age: 0,
+          maxAge: 90
+        });
+      }
+      if (tile.footprints.length > 20) tile.footprints.splice(0, tile.footprints.length - 20);
     } else if (activeTool === 'grass') {
       tile.type = 'grass';
       tile.npk = 18;
       tile.plant = null;
       tile.trample = 0;
+      tile.footprints = [];
       tile.isDesirePath = false;
       tile.flowerDots = [];
       for (let i = 0; i < 4; i++) {

@@ -45,7 +45,7 @@
     { key: "winter", label: "Winter \u2744\uFE0F" }
   ];
   var seasonState = {
-    elapsedYears: 0,
+    elapsedYears: 0.125,
     index: 0,
     key: "spring",
     label: "Fr\xFChling \u{1F331}",
@@ -74,7 +74,8 @@
     const idxA = Math.floor(shifted) % 4;
     const idxB = (idxA + 1) % 4;
     const rawT = shifted - Math.floor(shifted);
-    const smoothT = rawT * rawT * (3 - 2 * rawT);
+    const clampedT = Math.max(0, Math.min(1, (rawT - 0.18) / 0.64));
+    const smoothT = clampedT * clampedT * (3 - 2 * clampedT);
     const keys = ["spring", "summer", "autumn", "winter"];
     seasonState.weights = { spring: 0, summer: 0, autumn: 0, winter: 0 };
     seasonState.weights[keys[idxA]] = 1 - smoothT;
@@ -314,10 +315,23 @@
         }
         let isDesirePath = false;
         let trample = 0;
-        if (biome.id === "river_valley" && y === CAMP_CENTER.y && x >= CAMP_CENTER.x && x <= 19) {
-          type = "path";
-          isDesirePath = true;
-          trample = 90;
+        const footprints = [];
+        if (biome.id === "river_valley" && y === CAMP_CENTER.y && x > CAMP_CENTER.x && x <= 18 && type === "grass" && !plant) {
+          trample = 55;
+          const baseAngle = Math.atan2(0.5, 1);
+          for (let i = 0; i < 6; i++) {
+            const stepT = i / 5 - 0.5;
+            const isLeft = i % 2 === 0;
+            footprints.push({
+              lx: stepT * 18 + (Math.random() - 0.5) * 5,
+              ly: stepT * 9 + (isLeft ? -1.8 : 1.8) + (Math.random() - 0.5) * 3,
+              angle: baseAngle + (Math.random() - 0.5) * 0.25,
+              isLeft,
+              scale: 0.95,
+              age: Math.random() * 18,
+              maxAge: 65
+            });
+          }
         }
         let fireObj = null;
         if (x === CAMP_CENTER.x && y === CAMP_CENTER.y) {
@@ -356,6 +370,7 @@
           poop: null,
           flowerDots,
           trample,
+          footprints,
           isDesirePath,
           fire: fireObj
         };
@@ -464,8 +479,16 @@
         if (tile.type === "grass" && (!tile.roots || tile.roots < 2) && tile.npk >= 40 && Math.random() < 6e-4 * dtSec) {
           tile.roots = (tile.roots || 0) + 1;
         }
+        if (tile.footprints && tile.footprints.length > 0) {
+          for (let i = tile.footprints.length - 1; i >= 0; i--) {
+            tile.footprints[i].age += dtSec;
+            if (tile.footprints[i].age >= tile.footprints[i].maxAge) {
+              tile.footprints.splice(i, 1);
+            }
+          }
+        }
         if (tile.trample && tile.trample > 0) {
-          tile.trample = Math.max(0, tile.trample - dtSec * 0.35);
+          tile.trample = Math.max(0, tile.trample - dtSec * 0.45);
         }
         if (tile.type === "path" && tile.isDesirePath && (!tile.trample || tile.trample <= 0)) {
           tile.type = "grass";
@@ -630,8 +653,8 @@
           cSpring = [82 - factor * 26, 134 - factor * 24, 88 - factor * 18];
           cSummer = [114 - factor * 28, 116 - factor * 24, 86 - factor * 18];
         } else {
-          cSpring = [88 - factor * 56, 162 - factor * 58, 76 - factor * 46];
-          cSummer = [138 - factor * 76, 144 - factor * 62, 62 - factor * 40];
+          cSpring = [70 - factor * 44, 174 - factor * 58, 68 - factor * 40];
+          cSummer = [148 - factor * 72, 148 - factor * 58, 52 - factor * 34];
         }
         const cAutumn = [148 - factor * 58, 116 - factor * 48, 56 - factor * 32];
         const cWinter = [224 - factor * 28, 232 - factor * 24, 242 - factor * 18];
@@ -685,7 +708,10 @@
       if (tile.type === "water") {
         this.drawWaterWaves(cx, cy);
       }
-      const flowerScale = w.spring * 1.35 + w.summer * 0.58 + w.autumn * 0.22;
+      if (tile.footprints && tile.footprints.length > 0 && tile.type !== "water") {
+        this.drawFootprints(cx, cy, tile.footprints, w);
+      }
+      const flowerScale = w.spring * 1.45 + w.summer * 0.42 + w.autumn * 0.18;
       if (flowerScale > 0.1 && tile.type === "grass" && tile.flowerDots && tile.flowerDots.length > 0 && !tile.plant && !tile.poop) {
         this.drawNaturalFlowers(cx, cy, tile.flowerDots, flowerScale);
       }
@@ -693,6 +719,41 @@
         this.drawOrganicPoop(cx, cy);
       }
       ctx2.restore();
+    },
+    drawFootprints(cx, cy, footprints, w) {
+      const ctx2 = this.ctx;
+      const zoom = this.cam.zoom;
+      const trackColor = blend4RGB(
+        [64, 48, 32],
+        [112, 86, 54],
+        [68, 48, 30],
+        [134, 156, 186],
+        w
+      );
+      for (const fp of footprints) {
+        const lifeRatio = Math.max(0, 1 - fp.age / (fp.maxAge || 65));
+        if (lifeRatio <= 0.02) continue;
+        const alpha = Math.min(1, lifeRatio * 1.35) * 0.78;
+        const s = (fp.scale || 1) * zoom;
+        ctx2.save();
+        ctx2.translate(cx + fp.lx * zoom, cy + fp.ly * zoom);
+        ctx2.rotate(fp.angle || 0);
+        ctx2.globalAlpha = alpha;
+        if (w.winter > 0.25) {
+          ctx2.fillStyle = `rgba(255, 255, 255, ${(w.winter * 0.55).toFixed(2)})`;
+          ctx2.beginPath();
+          ctx2.ellipse(0.9 * s, 0, 2.2 * s, 1.35 * s, 0, 0, Math.PI * 2);
+          ctx2.fill();
+        }
+        ctx2.fillStyle = trackColor;
+        ctx2.beginPath();
+        ctx2.ellipse(1 * s, 0, 1.75 * s, 1.05 * s, 0, 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.beginPath();
+        ctx2.ellipse(-1.25 * s, 0, 1.15 * s, 0.82 * s, 0, 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.restore();
+      }
     },
     drawWaterWaves(cx, cy) {
       const ctx2 = this.ctx;
@@ -2934,6 +2995,8 @@
       this.state = "idle";
       this.stateTimer = 0;
       this.path = [];
+      this.stepAccum = 0;
+      this.nextFootLeft = false;
     }
     setMoveTarget(map2, tx, ty, intent, huntTarget = null) {
       this.targetX = tx;
@@ -3262,22 +3325,17 @@
         const cx = Math.round(this.x);
         const cy = Math.round(this.y);
         const curTile = map2[cy] && map2[cy][cx];
-        const onPath = curTile && curTile.type === "path";
+        const onPath = Boolean(curTile && (curTile.type === "path" || curTile.trample && curTile.trample >= 35));
         const inWater = curTile && curTile.type === "water";
         if (curTile) {
-          if (!curTile.plant && curTile.type !== "rock" && curTile.type !== "fire" && curTile.type !== "shelter") {
-            curTile.trample = Math.min(100, (curTile.trample || 0) + dt * 16);
-            if (curTile.type === "grass" && curTile.trample >= 55) {
-              curTile.type = "path";
-              curTile.isDesirePath = true;
-              curTile.flowerDots = [];
-            }
+          if (!curTile.plant && curTile.type !== "rock" && curTile.type !== "fire" && curTile.type !== "shelter" && curTile.type !== "water") {
+            curTile.trample = Math.min(100, (curTile.trample || 0) + dt * 14);
           } else if (curTile.plant) {
             curTile.trample = 0;
           }
         }
         let terrainFactor = 1;
-        if (onPath) terrainFactor = 1.6;
+        if (onPath) terrainFactor = 1.45;
         else if (inWater) terrainFactor = 0.65;
         const hasInfant = humans2.some((h) => h.isAlive && h.motherId === this.id && h.ageYears < 4);
         const infantSpeedFactor = hasInfant ? 0.72 : 1;
@@ -3285,6 +3343,33 @@
         const sprintFactor = isHuntingSprint ? 1.45 : 1;
         const injuryFactor = this.injuredTimer > 0 ? 0.55 : 1;
         const speed = terrainFactor * sprintFactor * infantSpeedFactor * injuryFactor * (this.ageYears > 40 ? 0.78 : 1) * dt;
+        const stepDist = Math.min(dist, speed);
+        this.stepAccum = (this.stepAccum || 0) + stepDist;
+        if (this.stepAccum >= 0.3 && curTile && (curTile.type === "grass" || curTile.type === "path") && !curTile.plant) {
+          this.stepAccum = 0;
+          this.nextFootLeft = !this.nextFootLeft;
+          if (!curTile.footprints) curTile.footprints = [];
+          if (curTile.footprints.length >= 20) curTile.footprints.shift();
+          const sdx = dx - dy;
+          const sdy = (dx + dy) * 0.5;
+          const screenAngle = Math.atan2(sdy, sdx);
+          const fx = this.x - cx;
+          const fy = this.y - cy;
+          const sideSign = this.nextFootLeft ? -1 : 1;
+          const perpX = -Math.sin(screenAngle) * 2.2 * sideSign;
+          const perpY = Math.cos(screenAngle) * 1.4 * sideSign;
+          const lx = Math.max(-18, Math.min(18, (fx - fy) * 16 + perpX + (Math.random() - 0.5) * 7.5));
+          const ly = Math.max(-9, Math.min(9, (fx + fy) * 8 + perpY + (Math.random() - 0.5) * 4));
+          curTile.footprints.push({
+            lx,
+            ly,
+            angle: screenAngle + (Math.random() - 0.5) * 0.16,
+            isLeft: this.nextFootLeft,
+            scale: this.ageYears < 12 ? 0.72 : 1,
+            age: 0,
+            maxAge: 65
+          });
+        }
         if (dist <= speed) {
           this.x = targetWp.x;
           this.y = targetWp.y;
@@ -3981,16 +4066,30 @@
         tile.trample = 0;
         tile.isDesirePath = false;
       } else if (activeTool === "path") {
-        tile.type = "path";
-        tile.isFord = false;
+        tile.type = "grass";
+        tile.isFord = true;
         tile.plant = null;
-        tile.trample = 100;
+        tile.trample = 85;
         tile.isDesirePath = false;
+        if (!tile.footprints) tile.footprints = [];
+        for (let i = 0; i < 8; i++) {
+          tile.footprints.push({
+            lx: (Math.random() - 0.5) * 26,
+            ly: (Math.random() - 0.5) * 13,
+            angle: (Math.random() - 0.5) * Math.PI,
+            isLeft: i % 2 === 0,
+            scale: 0.95,
+            age: 0,
+            maxAge: 90
+          });
+        }
+        if (tile.footprints.length > 20) tile.footprints.splice(0, tile.footprints.length - 20);
       } else if (activeTool === "grass") {
         tile.type = "grass";
         tile.npk = 18;
         tile.plant = null;
         tile.trample = 0;
+        tile.footprints = [];
         tile.isDesirePath = false;
         tile.flowerDots = [];
         for (let i = 0; i < 4; i++) {
