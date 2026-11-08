@@ -282,8 +282,8 @@ export const humanActionMethods = {
           // Option A: Übernutzter Baum stirbt ab und hinterlässt einen sichtbaren toten Baumstumpf,
           // der über Zeit verwittert (kein plötzliches Verschwinden ins Nichts).
           t.plant.isStump = true;
-          t.plant.stumpTimer = 180.0;
-          t.plant.maxStumpTimer = 180.0;
+          t.plant.stumpTimer = 120.0;
+          t.plant.maxStumpTimer = 120.0;
           logEvent(`🪵 Baum bei [${gx}, ${gy}] ist komplett abgeerntet – ein toter Baumstumpf bleibt zurück.`);
         }
       }

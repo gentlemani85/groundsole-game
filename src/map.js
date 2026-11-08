@@ -146,26 +146,28 @@ export function createMap(biomeId = 'river_valley') {
         } else if (biome.id === 'steppe') {
           // Steppe: Nahezu KEINE Bäume (Holznot!), 0 Beerensträucher!
           if (!isNearCamp && Math.random() < 0.012) {
+            const treeMaxAge = 2400 + Math.random() * 2400;
             plant = {
               type: 'tree',
               stage: 2,
               woodStock: 2,
               seedVariance: Math.random(),
-              maxAge: 700,
-              ageTimer: 0
+              maxAge: treeMaxAge,
+              ageTimer: Math.random() * (treeMaxAge * 0.4)
             };
           }
           // Keine Sträucher in der eisigen Steppe
         } else if (biome.id === 'karst_canyon') {
           // Felsige Schlucht: Spärliche, zähe Gehölze
           if (!isNearCamp && Math.random() < 0.10) {
+            const treeMaxAge = 3000 + Math.random() * 2400;
             plant = {
               type: 'tree',
               stage: 3,
               woodStock: 3,
               seedVariance: Math.random(),
-              maxAge: 850,
-              ageTimer: 0
+              maxAge: treeMaxAge,
+              ageTimer: Math.random() * (treeMaxAge * 0.5)
             };
           } else if (Math.random() < 0.08) {
             plant = {
@@ -509,13 +511,11 @@ export function updateEcology(map, dtSec, logEvent) {
 
         // Verwitterung toter Baumstümpfe (Option A: sichtbarer Stumpf verrottet langsam zu Humus)
         if (p.isStump) {
-          p.stumpTimer = (p.stumpTimer || 180) - dtSec;
+          p.stumpTimer = (p.stumpTimer || 120) - dtSec;
           if (p.stumpTimer <= 0) {
             tile.npk = Math.min(100, tile.npk + 30);
-            const seed = p.seedVariance || 0.5;
-            const isPine = (seed >= 0.35 && seed < 0.70);
-            // Nadelbäume treiben nie aus dem Stumpf aus; bei Laubbäumen keimt selten (20%) ein neuer Schössling
-            if (!isPine && Math.random() < 0.20) {
+            // Stockausschlag & Keimung im Totholz-Humus (75% Regeneration sichert dauerhafte Niederwald-Homöostase)
+            if (Math.random() < 0.75) {
               tile.plant = {
                 type: 'tree',
                 stage: 1,
@@ -525,7 +525,7 @@ export function updateEcology(map, dtSec, logEvent) {
                 maxAge: 3600 + Math.random() * 2400,
                 ageTimer: 0
               };
-              logEvent(`🌱 Neben einem vermoderten Laubbaum-Stumpf bei [${x}, ${y}] sprießt ein junger Keimling.`);
+              logEvent(`🌱 Aus dem vermoderten Totholz-Stumpf bei [${x}, ${y}] treibt ein frischer Schössling.`);
             } else {
               tile.plant = null;
             }
@@ -552,8 +552,8 @@ export function updateEcology(map, dtSec, logEvent) {
             } else {
               // Uralter Baum stirbt ab und hinterlässt zunächst einen sichtbaren Totholz-Stumpf
               p.isStump = true;
-              p.stumpTimer = 180.0;
-              p.maxStumpTimer = 180.0;
+              p.stumpTimer = 120.0;
+              p.maxStumpTimer = 120.0;
               logEvent(`🪵 Ein uralter Baum bei [${x}, ${y}] ist abgestorben und als Totholz-Stumpf zurückgeblieben.`);
               continue;
             }

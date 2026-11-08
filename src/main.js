@@ -471,7 +471,7 @@ function applyToolAtScreen(sx, sy) {
       logEvent(`🪨 Felsen platziert.`);
     } else if (activeTool === 'tree') {
       tile.type = 'grass';
-      tile.plant = { type: 'tree', stage: 1, growthTimer: 0, woodStock: 3, seedVariance: Math.random(), maxAge: 1200, ageTimer: 0 };
+      tile.plant = { type: 'tree', stage: 1, growthTimer: 0, woodStock: 3, seedVariance: Math.random(), maxAge: 3600 + Math.random() * 2400, ageTimer: 0 };
       tile.npk = Math.max(tile.npk, 40);
       tile.trample = 0;
       tile.isDesirePath = false;

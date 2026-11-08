@@ -378,7 +378,7 @@ export const environmentRenderMethods = {
 
     // Toter Baumstumpf (Option A: nach kompletter Entästung oder Alterstod)
     if (plant.isStump) {
-      const rem = typeof plant.stumpTimer === 'number' ? plant.stumpTimer : 180;
+      const rem = typeof plant.stumpTimer === 'number' ? plant.stumpTimer : 120;
       const fadeAlpha = Math.min(1, rem / 30); // verblasst in den letzten 30s sanft in den Humus
       ctx.globalAlpha = fadeAlpha;
 

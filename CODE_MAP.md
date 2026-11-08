@@ -66,7 +66,7 @@
 ### `src/map.js` (592 Zeilen)
 - **L9**: `export const BIOMES =`
 - **L40**: `export function createMap(biomeId = 'river_valley')`
-- **L321**: `export function updateEcology(map, dtSec, logEvent)`
+- **L323**: `export function updateEcology(map, dtSec, logEvent)`
 
 ### `src/wildlife.js` (294 Zeilen)
 - **L13**: `export let spookedTimer = 0;`

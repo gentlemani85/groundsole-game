@@ -245,24 +245,26 @@
             }
           } else if (biome.id === "steppe") {
             if (!isNearCamp && Math.random() < 0.012) {
+              const treeMaxAge = 2400 + Math.random() * 2400;
               plant = {
                 type: "tree",
                 stage: 2,
                 woodStock: 2,
                 seedVariance: Math.random(),
-                maxAge: 700,
-                ageTimer: 0
+                maxAge: treeMaxAge,
+                ageTimer: Math.random() * (treeMaxAge * 0.4)
               };
             }
           } else if (biome.id === "karst_canyon") {
             if (!isNearCamp && Math.random() < 0.1) {
+              const treeMaxAge = 3e3 + Math.random() * 2400;
               plant = {
                 type: "tree",
                 stage: 3,
                 woodStock: 3,
                 seedVariance: Math.random(),
-                maxAge: 850,
-                ageTimer: 0
+                maxAge: treeMaxAge,
+                ageTimer: Math.random() * (treeMaxAge * 0.5)
               };
             } else if (Math.random() < 0.08) {
               plant = {
@@ -552,12 +554,10 @@
         if (tile.plant) {
           const p = tile.plant;
           if (p.isStump) {
-            p.stumpTimer = (p.stumpTimer || 180) - dtSec;
+            p.stumpTimer = (p.stumpTimer || 120) - dtSec;
             if (p.stumpTimer <= 0) {
               tile.npk = Math.min(100, tile.npk + 30);
-              const seed = p.seedVariance || 0.5;
-              const isPine = seed >= 0.35 && seed < 0.7;
-              if (!isPine && Math.random() < 0.2) {
+              if (Math.random() < 0.75) {
                 tile.plant = {
                   type: "tree",
                   stage: 1,
@@ -567,7 +567,7 @@
                   maxAge: 3600 + Math.random() * 2400,
                   ageTimer: 0
                 };
-                logEvent2(`\u{1F331} Neben einem vermoderten Laubbaum-Stumpf bei [${x}, ${y}] sprie\xDFt ein junger Keimling.`);
+                logEvent2(`\u{1F331} Aus dem vermoderten Totholz-Stumpf bei [${x}, ${y}] treibt ein frischer Sch\xF6ssling.`);
               } else {
                 tile.plant = null;
               }
@@ -590,8 +590,8 @@
                 continue;
               } else {
                 p.isStump = true;
-                p.stumpTimer = 180;
-                p.maxStumpTimer = 180;
+                p.stumpTimer = 120;
+                p.maxStumpTimer = 120;
                 logEvent2(`\u{1FAB5} Ein uralter Baum bei [${x}, ${y}] ist abgestorben und als Totholz-Stumpf zur\xFCckgeblieben.`);
                 continue;
               }
@@ -925,7 +925,7 @@
       ctx2.save();
       const w = seasonState.weights || { spring: 1, summer: 0, autumn: 0, winter: 0 };
       if (plant.isStump) {
-        const rem = typeof plant.stumpTimer === "number" ? plant.stumpTimer : 180;
+        const rem = typeof plant.stumpTimer === "number" ? plant.stumpTimer : 120;
         const fadeAlpha = Math.min(1, rem / 30);
         ctx2.globalAlpha = fadeAlpha;
         const sw = 4.8 * zoom;
@@ -1994,7 +1994,7 @@
     for (let y = 0; y < MAP_SIZE; y++) {
       for (let x = 0; x < MAP_SIZE; x++) {
         const p = map2[y][x].plant;
-        if (p && p.type === "tree" && !p.isStump && p.stage >= 2 && (p.woodStock === void 0 || p.woodStock > 0)) {
+        if (p && p.type === "tree" && !p.isStump && p.stage >= 3 && (p.woodStock === void 0 || p.woodStock > 0)) {
           const d = Math.hypot(x - fromX, y - fromY);
           if (d < minDist) {
             minDist = d;
@@ -2851,8 +2851,8 @@
           t.plant.woodStock--;
           if (t.plant.woodStock <= 0) {
             t.plant.isStump = true;
-            t.plant.stumpTimer = 180;
-            t.plant.maxStumpTimer = 180;
+            t.plant.stumpTimer = 120;
+            t.plant.maxStumpTimer = 120;
             logEvent2(`\u{1FAB5} Baum bei [${gx}, ${gy}] ist komplett abgeerntet \u2013 ein toter Baumstumpf bleibt zur\xFCck.`);
           }
         }
@@ -4082,7 +4082,7 @@
         logEvent(`\u{1FAA8} Felsen platziert.`);
       } else if (activeTool === "tree") {
         tile.type = "grass";
-        tile.plant = { type: "tree", stage: 1, growthTimer: 0, woodStock: 3, seedVariance: Math.random(), maxAge: 1200, ageTimer: 0 };
+        tile.plant = { type: "tree", stage: 1, growthTimer: 0, woodStock: 3, seedVariance: Math.random(), maxAge: 3600 + Math.random() * 2400, ageTimer: 0 };
         tile.npk = Math.max(tile.npk, 40);
         tile.trample = 0;
         tile.isDesirePath = false;

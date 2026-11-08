@@ -136,7 +136,7 @@ export function findNearestTile(map, fromX, fromY, type) {
 }
 
 /**
- * Sucht den nächstgelegenen fällbaren Baum (stage >= 2).
+ * Sucht den nächstgelegenen fällbaren Baum (ausgewachsen: stage === 3).
  */
 export function findNearestAdultTree(map, fromX, fromY) {
   let nearest = null;
@@ -144,7 +144,7 @@ export function findNearestAdultTree(map, fromX, fromY) {
   for (let y = 0; y < MAP_SIZE; y++) {
     for (let x = 0; x < MAP_SIZE; x++) {
       const p = map[y][x].plant;
-      if (p && p.type === 'tree' && !p.isStump && p.stage >= 2 && (p.woodStock === undefined || p.woodStock > 0)) {
+      if (p && p.type === 'tree' && !p.isStump && p.stage >= 3 && (p.woodStock === undefined || p.woodStock > 0)) {
         const d = Math.hypot(x - fromX, y - fromY);
         if (d < minDist) {
           minDist = d;
