@@ -4,7 +4,7 @@
 // 4 unterschiedliche Landschaften: Fluss-Aue, Eiszeit-Steppe, Dichter Urwald, Felsenschlucht.
 // =========================================================================
 
-import { MAP_SIZE, CAMP_CENTER, SHELTER_CONFIG, campfireStock, fireState, STORAGE_LIMITS, SPOILAGE_CONFIG } from './config.js';
+import { MAP_SIZE, CAMP_CENTER, SHELTER_CONFIG, campfireStock, fireState, STORAGE_LIMITS, SPOILAGE_CONFIG, seasonState, advanceSeasonClock } from './config.js';
 
 export const BIOMES = {
   river_valley: {
@@ -305,19 +305,26 @@ export function createMap(biomeId = 'river_valley') {
 }
 
 export function updateEcology(map, dtSec, logEvent) {
+  // 0. Jahreszeiten-Uhr fortschreiben
+  advanceSeasonClock(dtSec, logEvent);
+
   // ==========================================
-  // NAHRUNGSVERDERB & LAGERKAPAZITÄT (Thermodynamik der Fäule)
-  // Auf offenem Erdboden verfaulen Fleisch & Beeren kontinuierlich
+  // NAHRUNGSVERDERB & LAGERKAPAZITÄT (Thermodynamik der Fäule vs. Winterfrost)
+  // Im Winter gefriert der Vorrat (Natur-Kühlschrank: 0 Fäulnis!).
+  // Im heißen Sommer verdirbt Fleisch auf offenem Erdboden 1.35x schneller.
   // ==========================================
-  SPOILAGE_CONFIG.timer = (SPOILAGE_CONFIG.timer || 0) + dtSec;
-  if (SPOILAGE_CONFIG.timer >= SPOILAGE_CONFIG.decayInterval) {
-    SPOILAGE_CONFIG.timer = 0;
-    if (campfireStock.food > 0) {
-      // Höherer Verderb bei großem Vorratshaufen (> 18 Nahrung)
-      const loss = (campfireStock.food > 18) ? 2 : 1;
-      campfireStock.food = Math.max(0, campfireStock.food - loss);
-      if (Math.random() < 0.25) {
-        logEvent(`🍂 Vorratsverderb: Fleisch & Beeren sind im feuchten Erdlager verfault (-${loss}).`);
+  if (!seasonState.isWinter) {
+    const spoilageSpeed = seasonState.isSummer ? 1.35 : 1.0;
+    SPOILAGE_CONFIG.timer = (SPOILAGE_CONFIG.timer || 0) + dtSec * spoilageSpeed;
+    if (SPOILAGE_CONFIG.timer >= SPOILAGE_CONFIG.decayInterval) {
+      SPOILAGE_CONFIG.timer = 0;
+      if (campfireStock.food > 0) {
+        // Höherer Verderb bei großem Vorratshaufen (> 18 Nahrung)
+        const loss = (campfireStock.food > 18) ? 2 : 1;
+        campfireStock.food = Math.max(0, campfireStock.food - loss);
+        if (Math.random() < 0.25) {
+          logEvent(`🍂 Vorratsverderb: Fleisch & Beeren sind im feuchten Erdlager verfault (-${loss}).`);
+        }
       }
     }
   }
@@ -442,7 +449,9 @@ export function updateEcology(map, dtSec, logEvent) {
           };
         }
 
-        tile.fire.woodBurnTimer = (tile.fire.woodBurnTimer || 0) + dtSec;
+        // Im Winter brennt das Feuer wegen des Kältegradienten 1.35x schneller ab
+        const fireBurnRate = seasonState.isWinter ? 1.35 : 1.0;
+        tile.fire.woodBurnTimer = (tile.fire.woodBurnTimer || 0) + dtSec * fireBurnRate;
         if (tile.fire.woodBurnTimer >= 22.0) {
           tile.fire.woodBurnTimer = 0;
           if (tile.fire.isCampCenter) {
@@ -474,7 +483,8 @@ export function updateEcology(map, dtSec, logEvent) {
 
       if (tile.plant) {
         const p = tile.plant;
-        const growthRate = (tile.npk / 40);
+        const seasonGrowthMod = seasonState.isWinter ? 0 : (seasonState.isSpring || seasonState.isSummer ? 1.2 : 0.85);
+        const growthRate = (tile.npk / 40) * seasonGrowthMod;
 
         // Alterung & Wurzelstock-Regeneration
         if (p.stage === 3) {
@@ -498,7 +508,7 @@ export function updateEcology(map, dtSec, logEvent) {
           }
         }
 
-        if (p.stage < 3) {
+        if (p.stage < 3 && growthRate > 0) {
           p.growthTimer = (p.growthTimer || 0) + dtSec * growthRate;
           const targetGrowthTime = (p.type === 'tree') ? 130.0 : 24.0;
           if (p.growthTimer >= targetGrowthTime) {
@@ -514,8 +524,10 @@ export function updateEcology(map, dtSec, logEvent) {
           }
         }
 
-        if (p.type === 'bush' && p.stage >= 2 && p.berries < (p.maxBerries || 5) && !p.isRootstock) {
-          p.berryTimer = (p.berryTimer || 0) + dtSec;
+        // Im Winter wachsen keine neuen Beeren nach; im Herbst reifen sie 1.3x schneller vor dem Frost
+        if (p.type === 'bush' && p.stage >= 2 && p.berries < (p.maxBerries || 5) && !p.isRootstock && !seasonState.isWinter) {
+          const berryRate = seasonState.isAutumn ? 1.3 : 1.0;
+          p.berryTimer = (p.berryTimer || 0) + dtSec * berryRate;
           if (p.berryTimer >= 10.0) {
             p.berries++;
             p.berryTimer = 0;

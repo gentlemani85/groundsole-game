@@ -1,4 +1,4 @@
-import { MAP_SIZE, campfireStock, CAMP_CENTER, fireState, START_YEAR } from './config.js';
+import { MAP_SIZE, campfireStock, CAMP_CENTER, fireState, START_YEAR, seasonState, advanceSeasonClock } from './config.js';
 import { Camera } from './isometric.js';
 import { createMap, updateEcology } from './map.js';
 import { Renderer } from './render.js';
@@ -72,18 +72,19 @@ camera.y = canvas.height / 2 - (centerPos.y - camera.y);
 function getStatusLabel(h) {
   if (!h.isAlive) return 'verstorben';
   if (h.ageYears < 4) return 'bei Mutter (Tragling)';
+  const healthSuffix = h.injuredTimer > 0 ? ' (verletzt 🩸)' : (h.sickTimer > 0 ? ' (krank 🤒)' : '');
   if (h.state === 'socializing') {
-    return h.actionIntent === 'sit_campfire' ? 'am Feuer 🔥' : 'plaudert 🗣️';
+    return (h.actionIntent === 'sit_campfire' ? 'am Feuer 🔥' : 'plaudert 🗣️') + healthSuffix;
   }
-  if (h.state === 'playing') return 'spielt ⭐';
-  if (h.state === 'resting') return (h.actionIntent === 'rest_shelter' ? 'in Hütte ⛺' : 'ruht');
+  if (h.state === 'playing') return 'spielt ⭐' + healthSuffix;
+  if (h.state === 'resting') return (h.actionIntent === 'rest_shelter' ? 'in Hütte ⛺' : 'ruht') + healthSuffix;
   if (h.state === 'moving') {
-    if (h.actionIntent === 'hunt_animal') return 'auf Hetzjagd 🏹';
-    if (h.actionIntent === 'sit_campfire') return 'geht zum Feuer';
-    if (h.actionIntent === 'play') return 'tollt umher';
-    return 'unterwegs';
+    if (h.actionIntent === 'hunt_animal') return 'auf Hetzjagd 🏹' + healthSuffix;
+    if (h.actionIntent === 'sit_campfire') return 'geht zum Feuer' + healthSuffix;
+    if (h.actionIntent === 'play') return 'tollt umher' + healthSuffix;
+    return 'unterwegs' + healthSuffix;
   }
-  return h.state;
+  return h.state + healthSuffix;
 }
 
 // UI
@@ -242,9 +243,7 @@ function updateUI() {
     elapsedYearsEl.innerText = `Klan-Jahr ${Math.floor(elapsedYears)}`;
   }
   if (simSeasonEl) {
-    const seasons = ['Frühling 🌱', 'Sommer ☀️', 'Herbst 🍂', 'Winter ❄️'];
-    const sIdx = Math.floor((elapsedYears % 1) * 4);
-    simSeasonEl.innerText = seasons[sIdx];
+    simSeasonEl.innerText = seasonState.label;
   }
 
   // 2. Klan-Demographie & Populationsstatistik
@@ -561,6 +560,7 @@ function loop(now) {
   // 1.5 Nomadische Migration & Verlassen des übernutzten Tals
   map = updateMigration(dtSec, map, humans, animals, campfireStock, fireState, (addY) => {
     elapsedYears += addY;
+    advanceSeasonClock(addY * 50);
   }, logEvent);
 
   // 2. Wildtier-Spawn & Update (mit Vergrämungs-Abklingzeit & Biom-Fauna)

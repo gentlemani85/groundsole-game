@@ -1,0 +1,5 @@
+# Build-Artefakte & Vorschau-Sandboxes bei Textsuche (ripgrep/grep) ignorieren,
+# damit KI-Agenten ausschließlich die echten Quelldateien in src/ finden.
+bundle.js
+preview_animal.html
+node_modules/

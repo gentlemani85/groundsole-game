@@ -38,6 +38,44 @@
     // Intervall für biologischen Fäulnis-Zerfall
     timer: 0
   };
+  var SEASONS = [
+    { key: "spring", label: "Fr\xFChling \u{1F331}" },
+    { key: "summer", label: "Sommer \u2600\uFE0F" },
+    { key: "autumn", label: "Herbst \u{1F342}" },
+    { key: "winter", label: "Winter \u2744\uFE0F" }
+  ];
+  var seasonState = {
+    elapsedYears: 0,
+    index: 0,
+    key: "spring",
+    label: "Fr\xFChling \u{1F331}",
+    isSpring: true,
+    isSummer: false,
+    isAutumn: false,
+    isWinter: false
+  };
+  function advanceSeasonClock(dtSec, logEvent2 = null) {
+    if (dtSec <= 0) return;
+    const prevIndex = seasonState.index;
+    seasonState.elapsedYears += dtSec / 50;
+    const newIndex = Math.floor(seasonState.elapsedYears % 1 * 4) % 4;
+    seasonState.index = newIndex;
+    seasonState.key = SEASONS[newIndex].key;
+    seasonState.label = SEASONS[newIndex].label;
+    seasonState.isSpring = newIndex === 0;
+    seasonState.isSummer = newIndex === 1;
+    seasonState.isAutumn = newIndex === 2;
+    seasonState.isWinter = newIndex === 3;
+    if (newIndex !== prevIndex && logEvent2) {
+      if (newIndex === 0) {
+        logEvent2("\u{1F331} Schneeschmelze im Tal! Der Fr\xFChling weckt neue Knospen und Wildblumen.");
+      } else if (newIndex === 2) {
+        logEvent2("\u{1F342} Der Herbst zieht ins Tal: Das Laub f\xE4rbt sich golden \u2013 der Klan sammelt Wintervorr\xE4te.");
+      } else if (newIndex === 3) {
+        logEvent2("\u2744\uFE0F Der eisige Pleistoz\xE4n-Winter bricht herein! Beeren rasten, Schnee bedeckt das Land.");
+      }
+    }
+  }
 
   // src/isometric.js
   var Camera = class {
@@ -334,14 +372,18 @@
     return map2;
   }
   function updateEcology(map2, dtSec, logEvent2) {
-    SPOILAGE_CONFIG.timer = (SPOILAGE_CONFIG.timer || 0) + dtSec;
-    if (SPOILAGE_CONFIG.timer >= SPOILAGE_CONFIG.decayInterval) {
-      SPOILAGE_CONFIG.timer = 0;
-      if (campfireStock.food > 0) {
-        const loss = campfireStock.food > 18 ? 2 : 1;
-        campfireStock.food = Math.max(0, campfireStock.food - loss);
-        if (Math.random() < 0.25) {
-          logEvent2(`\u{1F342} Vorratsverderb: Fleisch & Beeren sind im feuchten Erdlager verfault (-${loss}).`);
+    advanceSeasonClock(dtSec, logEvent2);
+    if (!seasonState.isWinter) {
+      const spoilageSpeed = seasonState.isSummer ? 1.35 : 1;
+      SPOILAGE_CONFIG.timer = (SPOILAGE_CONFIG.timer || 0) + dtSec * spoilageSpeed;
+      if (SPOILAGE_CONFIG.timer >= SPOILAGE_CONFIG.decayInterval) {
+        SPOILAGE_CONFIG.timer = 0;
+        if (campfireStock.food > 0) {
+          const loss = campfireStock.food > 18 ? 2 : 1;
+          campfireStock.food = Math.max(0, campfireStock.food - loss);
+          if (Math.random() < 0.25) {
+            logEvent2(`\u{1F342} Vorratsverderb: Fleisch & Beeren sind im feuchten Erdlager verfault (-${loss}).`);
+          }
         }
       }
     }
@@ -438,7 +480,8 @@
               isCampCenter
             };
           }
-          tile.fire.woodBurnTimer = (tile.fire.woodBurnTimer || 0) + dtSec;
+          const fireBurnRate = seasonState.isWinter ? 1.35 : 1;
+          tile.fire.woodBurnTimer = (tile.fire.woodBurnTimer || 0) + dtSec * fireBurnRate;
           if (tile.fire.woodBurnTimer >= 22) {
             tile.fire.woodBurnTimer = 0;
             if (tile.fire.isCampCenter) {
@@ -469,7 +512,8 @@
         }
         if (tile.plant) {
           const p = tile.plant;
-          const growthRate = tile.npk / 40;
+          const seasonGrowthMod = seasonState.isWinter ? 0 : seasonState.isSpring || seasonState.isSummer ? 1.2 : 0.85;
+          const growthRate = tile.npk / 40 * seasonGrowthMod;
           if (p.stage === 3) {
             p.ageTimer = (p.ageTimer || 0) + dtSec;
             const maxAge = p.maxAge || (p.type === "bush" ? 800 : 1200);
@@ -490,7 +534,7 @@
               }
             }
           }
-          if (p.stage < 3) {
+          if (p.stage < 3 && growthRate > 0) {
             p.growthTimer = (p.growthTimer || 0) + dtSec * growthRate;
             const targetGrowthTime = p.type === "tree" ? 130 : 24;
             if (p.growthTimer >= targetGrowthTime) {
@@ -505,8 +549,9 @@
               }
             }
           }
-          if (p.type === "bush" && p.stage >= 2 && p.berries < (p.maxBerries || 5) && !p.isRootstock) {
-            p.berryTimer = (p.berryTimer || 0) + dtSec;
+          if (p.type === "bush" && p.stage >= 2 && p.berries < (p.maxBerries || 5) && !p.isRootstock && !seasonState.isWinter) {
+            const berryRate = seasonState.isAutumn ? 1.3 : 1;
+            p.berryTimer = (p.berryTimer || 0) + dtSec * berryRate;
             if (p.berryTimer >= 10) {
               p.berries++;
               p.berryTimer = 0;
@@ -517,84 +562,8 @@
     }
   }
 
-  // src/render.js
-  var Renderer = class {
-    constructor(ctx2, camera2) {
-      this.ctx = ctx2;
-      this.cam = camera2;
-      this.waterPhase = 0;
-    }
-    render(map2, humans2, animals2, hoveredGrid2, selectedHumanId2, dtSec, fireIntensity = 100) {
-      const ctx2 = this.ctx;
-      this.waterPhase += dtSec * 1.5;
-      this.biomeId = map2.biomeId || "river_valley";
-      ctx2.clearRect(0, 0, this.cam.canvas.width, this.cam.canvas.height);
-      for (let y = 0; y < MAP_SIZE; y++) {
-        for (let x = 0; x < MAP_SIZE; x++) {
-          this.drawGround(map2[y][x], x, y);
-        }
-      }
-      if (hoveredGrid2.x >= 0 && hoveredGrid2.x < MAP_SIZE && hoveredGrid2.y >= 0 && hoveredGrid2.y < MAP_SIZE) {
-        this.drawHoverCursor(hoveredGrid2.x, hoveredGrid2.y);
-      }
-      const depthItems = [];
-      for (let y = 0; y < MAP_SIZE; y++) {
-        for (let x = 0; x < MAP_SIZE; x++) {
-          const tile = map2[y][x];
-          if (tile.type === "rock") {
-            depthItems.push({
-              type: "rock",
-              x,
-              y,
-              stoneStock: tile.stoneStock,
-              maxStoneStock: tile.maxStoneStock,
-              sortKey: x + y + 0.1
-            });
-          } else if (tile.type === "shelter") {
-            depthItems.push({ type: "shelter", x, y, shelter: tile.shelter, sortKey: x + y + 0.15 });
-          } else if (tile.type === "fire") {
-            depthItems.push({ type: "fire", x, y, fire: tile.fire, sortKey: x + y + 0.05 });
-          }
-          if (tile.plant) {
-            depthItems.push({ type: "plant", x, y, plant: tile.plant, sortKey: x + y + 0.2 });
-          }
-        }
-      }
-      for (const h of humans2) {
-        depthItems.push({ type: "human", entity: h, sortKey: h.x + h.y });
-      }
-      for (const a of animals2) {
-        if (a.isAlive) {
-          depthItems.push({ type: "animal", entity: a, sortKey: a.x + a.y });
-        }
-      }
-      depthItems.sort((a, b) => a.sortKey - b.sortKey);
-      for (const item of depthItems) {
-        if (item.type === "rock") {
-          const pos = this.cam.gridToScreen(item.x, item.y);
-          this.drawNaturalRock(pos.x, pos.y + TILE_H / 2 * this.cam.zoom, item.x, item.y, item.stoneStock, item.maxStoneStock);
-        } else if (item.type === "shelter") {
-          const pos = this.cam.gridToScreen(item.x, item.y);
-          this.drawPrimitiveShelter(pos.x, pos.y + TILE_H / 2 * this.cam.zoom, item.shelter);
-        } else if (item.type === "fire") {
-          const pos = this.cam.gridToScreen(item.x, item.y);
-          const localIntensity = item.fire && typeof item.fire.intensity === "number" ? item.fire.intensity : item.x === CAMP_CENTER.x && item.y === CAMP_CENTER.y ? fireIntensity : 100;
-          this.drawCampfire(item.x, item.y, pos.x, pos.y + TILE_H / 2 * this.cam.zoom, localIntensity);
-        } else if (item.type === "plant") {
-          const pos = this.cam.gridToScreen(item.x, item.y);
-          const cy = pos.y + TILE_H / 2 * this.cam.zoom;
-          if (item.plant.type === "bush") {
-            this.drawOrganicBush(pos.x, cy, item.plant);
-          } else if (item.plant.type === "tree") {
-            this.drawOrganicTree(pos.x, cy, item.plant);
-          }
-        } else if (item.type === "human") {
-          this.drawHuman(item.entity, selectedHumanId2);
-        } else if (item.type === "animal") {
-          this.drawAnimal(item.entity);
-        }
-      }
-    }
+  // src/render/environment.js
+  var environmentRenderMethods = {
     drawGround(tile, gx, gy) {
       const ctx2 = this.ctx;
       const zoom = this.cam.zoom;
@@ -611,9 +580,21 @@
       ctx2.lineTo(pos.x - tw / 2, cy);
       ctx2.closePath();
       let fillColor;
+      const distToCamp = Math.hypot(gx - CAMP_CENTER.x, gy - CAMP_CENTER.y);
+      const isMeltedByFire = fireState.intensity > 20 && distToCamp <= 3.5;
       if (tile.type === "grass") {
         const factor = Math.min(1, Math.max(0, tile.npk / 100));
-        if (this.biomeId === "steppe") {
+        if (seasonState.isWinter && !isMeltedByFire) {
+          const r = Math.round(224 - factor * 28);
+          const g = Math.round(232 - factor * 24);
+          const b = Math.round(242 - factor * 18);
+          fillColor = `rgb(${r}, ${g}, ${b})`;
+        } else if (seasonState.isAutumn) {
+          const r = Math.round(142 - factor * 58);
+          const g = Math.round(126 - factor * 48);
+          const b = Math.round(64 - factor * 34);
+          fillColor = `rgb(${r}, ${g}, ${b})`;
+        } else if (this.biomeId === "steppe") {
           const r = Math.round(156 - factor * 42);
           const g = Math.round(144 - factor * 38);
           const b = Math.round(68 - factor * 28);
@@ -636,7 +617,9 @@
         }
       } else if (tile.type === "water") {
         const shimmer = Math.sin(this.waterPhase + gx * 0.8 + gy * 0.5) * 8;
-        if (this.biomeId === "karst_canyon") {
+        if (seasonState.isWinter) {
+          fillColor = `rgb(${58 + shimmer}, ${118 + shimmer}, ${152 + shimmer})`;
+        } else if (this.biomeId === "karst_canyon") {
           fillColor = `rgb(${22 + shimmer}, ${120 + shimmer}, ${136 + shimmer})`;
         } else if (this.biomeId === "forest") {
           fillColor = `rgb(${24 + shimmer}, ${88 + shimmer}, ${98 + shimmer})`;
@@ -644,7 +627,11 @@
           fillColor = `rgb(${34 + shimmer}, ${105 + shimmer}, ${136 + shimmer})`;
         }
       } else if (tile.type === "path") {
-        fillColor = this.biomeId === "karst_canyon" ? "#767472" : this.biomeId === "steppe" ? "#a28862" : "#8a7452";
+        if (seasonState.isWinter && !isMeltedByFire) {
+          fillColor = "#9ca3af";
+        } else {
+          fillColor = this.biomeId === "karst_canyon" ? "#767472" : this.biomeId === "steppe" ? "#a28862" : "#8a7452";
+        }
       } else if (tile.type === "fire") {
         fillColor = "#3c362d";
       } else if (tile.type === "rock") {
@@ -677,14 +664,14 @@
       if (tile.type === "water") {
         this.drawWaterWaves(cx, cy);
       }
-      if (tile.type === "grass" && tile.flowerDots && tile.flowerDots.length > 0 && !tile.plant && !tile.poop) {
+      if (!seasonState.isWinter && tile.type === "grass" && tile.flowerDots && tile.flowerDots.length > 0 && !tile.plant && !tile.poop) {
         this.drawNaturalFlowers(cx, cy, tile.flowerDots);
       }
       if (tile.poop) {
         this.drawOrganicPoop(cx, cy);
       }
       ctx2.restore();
-    }
+    },
     drawWaterWaves(cx, cy) {
       const ctx2 = this.ctx;
       const zoom = this.cam.zoom;
@@ -701,7 +688,7 @@
       ctx2.quadraticCurveTo(cx, cy + 1 * zoom - waveOff, cx + 6 * zoom, cy + 3 * zoom - waveOff);
       ctx2.stroke();
       ctx2.restore();
-    }
+    },
     drawNaturalFlowers(cx, cy, dots) {
       const ctx2 = this.ctx;
       const zoom = this.cam.zoom;
@@ -715,7 +702,7 @@
         ctx2.arc(fx, fy - 1 * zoom, d.size * zoom, 0, Math.PI * 2);
         ctx2.fill();
       }
-    }
+    },
     drawOrganicPoop(cx, cy) {
       const ctx2 = this.ctx;
       const zoom = this.cam.zoom;
@@ -729,7 +716,7 @@
       ctx2.arc(cx - 0.5 * zoom, cy - 1 * zoom, 1.8 * zoom, 0, Math.PI * 2);
       ctx2.fill();
       ctx2.restore();
-    }
+    },
     drawOrganicBush(cx, cy, plant) {
       const ctx2 = this.ctx;
       const zoom = this.cam.zoom;
@@ -763,7 +750,15 @@
       let foliageDark = "#1f3e17";
       let foliageMid = "#2d5521";
       let foliageLight = "#427532";
-      if (this.biomeId === "steppe") {
+      if (seasonState.isWinter) {
+        foliageDark = "#334155";
+        foliageMid = "#64748b";
+        foliageLight = "#e2e8f0";
+      } else if (seasonState.isAutumn) {
+        foliageDark = "#5c2d16";
+        foliageMid = "#9a4419";
+        foliageLight = "#d97706";
+      } else if (this.biomeId === "steppe") {
         foliageDark = "#2e381b";
         foliageMid = "#4a572a";
         foliageLight = "#6b7b3b";
@@ -794,7 +789,7 @@
         ctx2.fill();
       }
       ctx2.restore();
-    }
+    },
     drawOrganicTree(cx, cy, plant) {
       const ctx2 = this.ctx;
       const zoom = this.cam.zoom;
@@ -848,10 +843,28 @@
         ctx2.lineTo(crownX - crownR * 0.45, crownY - crownR * 0.2);
         ctx2.closePath();
         ctx2.fill();
+        if (seasonState.isWinter) {
+          ctx2.fillStyle = "#f1f5f9";
+          ctx2.beginPath();
+          ctx2.moveTo(crownX, crownY - crownR * 1.12);
+          ctx2.lineTo(crownX + crownR * 0.42, crownY - crownR * 0.25);
+          ctx2.lineTo(crownX - crownR * 0.42, crownY - crownR * 0.25);
+          ctx2.closePath();
+          ctx2.fill();
+        }
       } else {
-        const cDark = this.biomeId === "steppe" ? "#2e381b" : "#142e0f";
-        const cMid = this.biomeId === "steppe" ? "#445427" : "#1e4417";
-        const cLight = this.biomeId === "steppe" ? "#677d3b" : "#316725";
+        let cDark = this.biomeId === "steppe" ? "#2e381b" : "#142e0f";
+        let cMid = this.biomeId === "steppe" ? "#445427" : "#1e4417";
+        let cLight = this.biomeId === "steppe" ? "#677d3b" : "#316725";
+        if (seasonState.isWinter) {
+          cDark = "#334155";
+          cMid = "#475569";
+          cLight = "#f1f5f9";
+        } else if (seasonState.isAutumn) {
+          cDark = seed < 0.18 ? "#7c2d12" : "#713f12";
+          cMid = seed < 0.18 ? "#c2410c" : "#b45309";
+          cLight = seed < 0.18 ? "#f97316" : "#f59e0b";
+        }
         ctx2.fillStyle = cDark;
         ctx2.beginPath();
         ctx2.arc(crownX - crownR * 0.45, crownY + crownR * 0.2, crownR * 0.65, 0, Math.PI * 2);
@@ -870,7 +883,7 @@
         ctx2.fill();
       }
       ctx2.restore();
-    }
+    },
     // Stark verbesserte, plastische Naturfels-Grafik mit Koordinaten-Variation & Schrumpfung beim Abbau
     drawNaturalRock(cx, cy, gx = 0, gy = 0, stoneStock = 8, maxStoneStock = 8) {
       const ctx2 = this.ctx;
@@ -912,7 +925,7 @@
       ctx2.lineTo(cx - 1 * zoom, cy + 3 * zoom);
       ctx2.closePath();
       ctx2.fill();
-      ctx2.fillStyle = cLight;
+      ctx2.fillStyle = seasonState.isWinter ? "#e2e8f0" : cLight;
       ctx2.beginPath();
       ctx2.moveTo(cx - w * 0.6, cy - h);
       ctx2.lineTo(cx + w * 0.2, cy - h * 1.2);
@@ -929,7 +942,7 @@
         ctx2.fill();
       }
       ctx2.restore();
-    }
+    },
     // Stark verbesserte, plastische Urzeit-Hütte mit Zustand & Verfall
     drawPrimitiveShelter(cx, cy, shelterData = null) {
       const ctx2 = this.ctx;
@@ -966,7 +979,7 @@
       ctx2.lineTo(cx - 3 * zoom, cy + 2 * zoom);
       ctx2.closePath();
       ctx2.fill();
-      ctx2.fillStyle = isCritical ? "#5a391a" : isWeathered ? "#714620" : "#8a5829";
+      ctx2.fillStyle = seasonState.isWinter ? "#cbd5e1" : isCritical ? "#5a391a" : isWeathered ? "#714620" : "#8a5829";
       ctx2.beginPath();
       ctx2.moveTo(cx + 3 * zoom, cy + 2 * zoom);
       ctx2.lineTo(cx, cy - 18 * zoom);
@@ -1004,7 +1017,7 @@
         ctx2.fillRect(bx, by, barFillW, barH);
       }
       ctx2.restore();
-    }
+    },
     // Echtes, organisches Acheuléen-Lagerfeuer (Züngelnde Flammen, Glutbett, Funkenflug)
     drawCampfire(gx, gy, cx, cy, fireIntensity = 100) {
       const ctx2 = this.ctx;
@@ -1122,7 +1135,31 @@
         ctx2.fillRect(cx + 8 * zoom, cy - 4 * zoom, 6 * zoom, 5 * zoom);
       }
       ctx2.restore();
+    },
+    drawHoverCursor(gx, gy) {
+      const ctx2 = this.ctx;
+      const zoom = this.cam.zoom;
+      const pos = this.cam.gridToScreen(gx, gy);
+      const tw = TILE_W * zoom;
+      const th = TILE_H * zoom;
+      ctx2.save();
+      ctx2.beginPath();
+      ctx2.moveTo(pos.x, pos.y);
+      ctx2.lineTo(pos.x + tw / 2, pos.y + th / 2);
+      ctx2.lineTo(pos.x, pos.y + th);
+      ctx2.lineTo(pos.x - tw / 2, pos.y + th / 2);
+      ctx2.closePath();
+      ctx2.fillStyle = "rgba(255, 255, 255, 0.16)";
+      ctx2.fill();
+      ctx2.strokeStyle = "#ffffff";
+      ctx2.lineWidth = 1.6 * zoom;
+      ctx2.stroke();
+      ctx2.restore();
     }
+  };
+
+  // src/render/animals.js
+  var animalRenderMethods = {
     drawAnimal(a) {
       const ctx2 = this.ctx;
       const zoom = this.cam.zoom;
@@ -1354,6 +1391,10 @@
       }
       ctx2.restore();
     }
+  };
+
+  // src/render/humans.js
+  var humanRenderMethods = {
     drawHuman(h, selectedHumanId2) {
       const ctx2 = this.ctx;
       const zoom = this.cam.zoom;
@@ -1362,7 +1403,7 @@
       const cy = pos.y + TILE_H / 2 * zoom;
       const isBaby = h.ageYears < 4;
       const isChild = h.ageYears >= 4 && h.ageYears < 12;
-      const isElder = h.ageYears > 50;
+      const isElder = h.ageYears >= 40;
       const shadowW = isBaby ? 2.6 : isChild ? 3.8 : 5.8;
       const shadowH = isBaby ? 1.4 : isChild ? 2 : 2.8;
       ctx2.save();
@@ -1446,11 +1487,11 @@
         ctx2.arc(cx - 3.5 * scale * zoom, bodyY - 1 * scale * zoom, 1.8 * scale * zoom, 0, Math.PI * 2);
         ctx2.fill();
       }
-      ctx2.fillStyle = h.ageYears > 50 ? "#cbd5e1" : "#fed7aa";
+      ctx2.fillStyle = h.ageYears >= 40 ? "#cbd5e1" : "#fed7aa";
       ctx2.beginPath();
       ctx2.arc(cx, bodyY - 6 * scale * zoom, 3.2 * scale * zoom, 0, Math.PI * 2);
       ctx2.fill();
-      const hairColor = h.ageYears > 50 ? "#94a3b8" : h.gender === "m" ? "#1c1917" : "#291b12";
+      const hairColor = h.ageYears >= 40 ? "#94a3b8" : h.gender === "m" ? "#1c1917" : "#291b12";
       ctx2.fillStyle = hairColor;
       ctx2.beginPath();
       ctx2.arc(cx, bodyY - 7.5 * scale * zoom, 2.8 * scale * zoom, Math.PI, Math.PI * 2);
@@ -1508,6 +1549,8 @@
       else if (h.state === "resting") icon = "\u{1F525}";
       else if (h.state === "mating") icon = "\u2764\uFE0F";
       else if (h.state === "migrating") icon = "\u26FA";
+      else if (h.injuredTimer > 0) icon = "\u{1FA78}";
+      else if (h.sickTimer > 0) icon = "\u{1F912}";
       else if (h.pregnancyTimer > 0) icon = "\u{1F930}";
       if (icon) {
         ctx2.font = `${Math.max(10, 11 * zoom)}px sans-serif`;
@@ -1516,27 +1559,93 @@
       }
       ctx2.restore();
     }
-    drawHoverCursor(gx, gy) {
+  };
+
+  // src/render.js
+  var Renderer = class {
+    constructor(ctx2, camera2) {
+      this.ctx = ctx2;
+      this.cam = camera2;
+      this.waterPhase = 0;
+    }
+    render(map2, humans2, animals2, hoveredGrid2, selectedHumanId2, dtSec, fireIntensity = 100) {
       const ctx2 = this.ctx;
-      const zoom = this.cam.zoom;
-      const pos = this.cam.gridToScreen(gx, gy);
-      const tw = TILE_W * zoom;
-      const th = TILE_H * zoom;
-      ctx2.save();
-      ctx2.beginPath();
-      ctx2.moveTo(pos.x, pos.y);
-      ctx2.lineTo(pos.x + tw / 2, pos.y + th / 2);
-      ctx2.lineTo(pos.x, pos.y + th);
-      ctx2.lineTo(pos.x - tw / 2, pos.y + th / 2);
-      ctx2.closePath();
-      ctx2.fillStyle = "rgba(255, 255, 255, 0.16)";
-      ctx2.fill();
-      ctx2.strokeStyle = "#ffffff";
-      ctx2.lineWidth = 1.6 * zoom;
-      ctx2.stroke();
-      ctx2.restore();
+      this.waterPhase += dtSec * 1.5;
+      this.biomeId = map2.biomeId || "river_valley";
+      ctx2.clearRect(0, 0, this.cam.canvas.width, this.cam.canvas.height);
+      for (let y = 0; y < MAP_SIZE; y++) {
+        for (let x = 0; x < MAP_SIZE; x++) {
+          this.drawGround(map2[y][x], x, y);
+        }
+      }
+      if (hoveredGrid2.x >= 0 && hoveredGrid2.x < MAP_SIZE && hoveredGrid2.y >= 0 && hoveredGrid2.y < MAP_SIZE) {
+        this.drawHoverCursor(hoveredGrid2.x, hoveredGrid2.y);
+      }
+      const depthItems = [];
+      for (let y = 0; y < MAP_SIZE; y++) {
+        for (let x = 0; x < MAP_SIZE; x++) {
+          const tile = map2[y][x];
+          if (tile.type === "rock") {
+            depthItems.push({
+              type: "rock",
+              x,
+              y,
+              stoneStock: tile.stoneStock,
+              maxStoneStock: tile.maxStoneStock,
+              sortKey: x + y + 0.1
+            });
+          } else if (tile.type === "shelter") {
+            depthItems.push({ type: "shelter", x, y, shelter: tile.shelter, sortKey: x + y + 0.15 });
+          } else if (tile.type === "fire") {
+            depthItems.push({ type: "fire", x, y, fire: tile.fire, sortKey: x + y + 0.05 });
+          }
+          if (tile.plant) {
+            depthItems.push({ type: "plant", x, y, plant: tile.plant, sortKey: x + y + 0.2 });
+          }
+        }
+      }
+      for (const h of humans2) {
+        depthItems.push({ type: "human", entity: h, sortKey: h.x + h.y });
+      }
+      for (const a of animals2) {
+        if (a.isAlive) {
+          depthItems.push({ type: "animal", entity: a, sortKey: a.x + a.y });
+        }
+      }
+      depthItems.sort((a, b) => a.sortKey - b.sortKey);
+      for (const item of depthItems) {
+        if (item.type === "rock") {
+          const pos = this.cam.gridToScreen(item.x, item.y);
+          this.drawNaturalRock(pos.x, pos.y + TILE_H / 2 * this.cam.zoom, item.x, item.y, item.stoneStock, item.maxStoneStock);
+        } else if (item.type === "shelter") {
+          const pos = this.cam.gridToScreen(item.x, item.y);
+          this.drawPrimitiveShelter(pos.x, pos.y + TILE_H / 2 * this.cam.zoom, item.shelter);
+        } else if (item.type === "fire") {
+          const pos = this.cam.gridToScreen(item.x, item.y);
+          const localIntensity = item.fire && typeof item.fire.intensity === "number" ? item.fire.intensity : item.x === CAMP_CENTER.x && item.y === CAMP_CENTER.y ? fireIntensity : 100;
+          this.drawCampfire(item.x, item.y, pos.x, pos.y + TILE_H / 2 * this.cam.zoom, localIntensity);
+        } else if (item.type === "plant") {
+          const pos = this.cam.gridToScreen(item.x, item.y);
+          const cy = pos.y + TILE_H / 2 * this.cam.zoom;
+          if (item.plant.type === "bush") {
+            this.drawOrganicBush(pos.x, cy, item.plant);
+          } else if (item.plant.type === "tree") {
+            this.drawOrganicTree(pos.x, cy, item.plant);
+          }
+        } else if (item.type === "human") {
+          this.drawHuman(item.entity, selectedHumanId2);
+        } else if (item.type === "animal") {
+          this.drawAnimal(item.entity);
+        }
+      }
     }
   };
+  Object.assign(
+    Renderer.prototype,
+    environmentRenderMethods,
+    animalRenderMethods,
+    humanRenderMethods
+  );
 
   // src/pathfinding.js
   function isTileWalkable(map2, x, y) {
@@ -1676,6 +1785,117 @@
       }
     }
     return bestSpot;
+  }
+  function findNearestTile(map2, fromX, fromY, type) {
+    let nearest = null;
+    let minDist = 99999;
+    for (let y = 0; y < MAP_SIZE; y++) {
+      for (let x = 0; x < MAP_SIZE; x++) {
+        if (map2[y][x].type === type) {
+          const d = Math.hypot(x - fromX, y - fromY);
+          if (d < minDist) {
+            minDist = d;
+            nearest = { x, y };
+          }
+        }
+      }
+    }
+    return nearest;
+  }
+  function findNearestAdultTree(map2, fromX, fromY) {
+    let nearest = null;
+    let minDist = 99999;
+    for (let y = 0; y < MAP_SIZE; y++) {
+      for (let x = 0; x < MAP_SIZE; x++) {
+        const p = map2[y][x].plant;
+        if (p && p.type === "tree" && p.stage >= 2) {
+          const d = Math.hypot(x - fromX, y - fromY);
+          if (d < minDist) {
+            minDist = d;
+            nearest = { x, y };
+          }
+        }
+      }
+    }
+    return nearest;
+  }
+  function findNearestShoreTile(map2, fromX, fromY) {
+    let shoreTile = null;
+    let minDist = 9999;
+    for (let y = 1; y < MAP_SIZE - 1; y++) {
+      for (let x = 1; x < MAP_SIZE - 1; x++) {
+        if (map2[y][x].type === "grass" || map2[y][x].type === "path") {
+          const hasWaterNeighbor = map2[y - 1][x].type === "water" || map2[y + 1][x].type === "water" || map2[y][x - 1].type === "water" || map2[y][x + 1].type === "water";
+          if (hasWaterNeighbor) {
+            const d = Math.hypot(x - fromX, y - fromY);
+            if (d < minDist) {
+              minDist = d;
+              shoreTile = { x, y };
+            }
+          }
+        }
+      }
+    }
+    return shoreTile;
+  }
+  function isPositionNearLitFire(map2, fromX, fromY) {
+    for (let y = 0; y < MAP_SIZE; y++) {
+      for (let x = 0; x < MAP_SIZE; x++) {
+        const t = map2[y][x];
+        if (t.type === "fire") {
+          const intensity = t.fire ? t.fire.intensity : x === CAMP_CENTER.x && y === CAMP_CENTER.y ? fireState.intensity : 100;
+          if (intensity > 15) {
+            const d = Math.hypot(x - fromX, y - fromY);
+            if (d <= 4.5) return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+  function findNearestLitFireTile(map2, fromX, fromY) {
+    let nearest = null;
+    let minDist = 99999;
+    for (let y = 0; y < MAP_SIZE; y++) {
+      for (let x = 0; x < MAP_SIZE; x++) {
+        const t = map2[y][x];
+        if (t.type === "fire") {
+          const intensity = t.fire ? t.fire.intensity : x === CAMP_CENTER.x && y === CAMP_CENTER.y ? fireState.intensity : 100;
+          if (intensity > 15) {
+            const d = Math.hypot(x - fromX, y - fromY);
+            if (d < minDist) {
+              minDist = d;
+              nearest = { x, y };
+            }
+          }
+        }
+      }
+    }
+    return nearest;
+  }
+  function findFreeShelterSpotNearCamp(map2, humans2 = []) {
+    for (let r = 1; r <= 4; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.abs(dx) === r || Math.abs(dy) === r) {
+            const sx = CAMP_CENTER.x + dx;
+            const sy = CAMP_CENTER.y + dy;
+            if (sx >= 1 && sx < MAP_SIZE - 1 && sy >= 1 && sy < MAP_SIZE - 1) {
+              const t = map2[sy][sx];
+              if ((t.type === "grass" || t.type === "path") && !t.plant && t.type !== "fire" && t.type !== "shelter") {
+                const alreadyTargeted = humans2.some(
+                  (h) => h.isAlive && h.actionIntent === "build_shelter" && Math.round(h.targetX) === sx && Math.round(h.targetY) === sy
+                );
+                if (!alreadyTargeted) {
+                  return { x: sx, y: sy };
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    return null;
   }
 
   // src/wildlife.js
@@ -1930,425 +2150,15 @@
     logEvent2(`${animal.icon} Ein wildes Einzelexemplar (${animal.name}) wagt sich am Talrand hervor.`);
   }
 
-  // src/human.js
-  var nextId = 4;
-  var FEMALE_NAMES = [
-    "Nyx",
-    "Kora",
-    "Vana",
-    "Sula",
-    "Eila",
-    "Mira",
-    "Tala",
-    "Rhea",
-    "Ayla",
-    "Sunita",
-    "Brena",
-    "Zaya",
-    "Ona",
-    "Yara",
-    "Nesta",
-    "Luma",
-    "Dara",
-    "Saga",
-    "Thora"
-  ];
-  var MALE_NAMES = [
-    "Einar",
-    "Dagan",
-    "Krag",
-    "Toruk",
-    "Boran",
-    "Alok",
-    "Jaro",
-    "Bran",
-    "Tark",
-    "Vorn",
-    "Raban",
-    "Korm",
-    "Hagan",
-    "Wulf",
-    "Gorm"
-  ];
-  var Human = class _Human {
-    constructor(id, name, gender, role, x, y, tint, ageYears = 24) {
-      this.id = id;
-      this.name = name;
-      this.gender = gender;
-      this.role = role;
-      this.x = x;
-      this.y = y;
-      this.targetX = x;
-      this.targetY = y;
-      this.tint = tint;
-      this.motherId = null;
-      this.ageYears = ageYears;
-      this.maxAgeYears = 58 + Math.random() * 14;
-      this.isAlive = true;
-      this.needs = {
-        water: 75 + Math.random() * 15,
-        food: 80 + Math.random() * 10,
-        energy: 90 + Math.random() * 10,
-        bladder: 20 + Math.random() * 25,
-        libido: 20 + Math.random() * 20
-      };
-      this.carried = null;
-      this.utilityContributed = 0;
-      this.pregnancyTimer = 0;
-      this.nursingTimer = 0;
-      this.state = "idle";
-      this.stateTimer = 0;
-      this.path = [];
-    }
-    setMoveTarget(map2, tx, ty, intent, huntTarget = null) {
-      this.targetX = tx;
-      this.targetY = ty;
-      this.actionIntent = intent;
-      this.huntTarget = huntTarget;
-      const p = findPath(map2, this.x, this.y, tx, ty);
-      if (!p) {
-        this.path = [];
-        this.state = "idle";
-        this.actionIntent = "idle";
-        this.huntTarget = null;
-        return false;
-      }
-      if (p.length > 1 && Math.hypot(p[0].x - this.x, p[0].y - this.y) < 0.4) {
-        p.shift();
-      }
-      this.path = p;
-      this.state = "moving";
-      return true;
-    }
-    update(dt, map2, humans2, animals2, logEvent2) {
-      if (!this.isAlive) {
-        if (dt > 0) {
-          this.timeSinceDeathYears = (this.timeSinceDeathYears || 0) + dt / 50;
-        }
-        return;
-      }
-      const prevAge = this.ageYears;
-      this.ageYears += dt / 50;
-      if (prevAge < 4 && this.ageYears >= 4) {
-        this.role = "Kind (Heranwachsend)";
-        logEvent2(`\u{1F9D2} ${this.name} ist 4 Jahre alt geworden und erkundet nun spielerisch das Lager!`);
-      }
-      if (prevAge < 12 && this.ageYears >= 12 && this.role.includes("Kind")) {
-        this.role = this.gender === "m" ? "J\xE4ger / Steinklopfer" : "Sammlerin & H\xFCterin";
-        logEvent2(`\u2728 ${this.name} hat das 12. Lebensjahr erreicht und arbeitet nun vollwertig f\xFCr den Klan.`);
-      }
-      if (this.needs.water <= 0) {
-        this.die("verdurstet (Wassermangel)", logEvent2);
-        return;
-      }
-      if (this.needs.food <= 0) {
-        this.die("verhungert (Nahrungsentzug)", logEvent2);
-        return;
-      }
-      if (this.ageYears >= this.maxAgeYears) {
-        this.die("biologisches Alterungsmaximum erreicht", logEvent2);
-        return;
-      }
-      if (this.ageYears < 4) {
-        this.role = "S\xE4ugling / Tragling";
-        this.carried = null;
-        let mother = humans2.find((h) => h.id === this.motherId && h.isAlive);
-        if (!mother) {
-          mother = humans2.find((h) => h.isAlive && h.gender === "f" && h.ageYears >= 13);
-          if (mother) this.motherId = mother.id;
-        }
-        if (mother) {
-          this.x = mother.x + 0.12;
-          this.y = mother.y + 0.08;
-          this.state = mother.state === "moving" ? "moving" : "resting";
-          this.actionIntent = "with_mother";
-          this.path = [];
-          this.needs.water = Math.max(this.needs.water, 75);
-          this.needs.food = Math.max(this.needs.food, 75);
-          this.needs.energy = Math.max(this.needs.energy, 70);
-          this.needs.libido = 0;
-          mother.needs.water = Math.max(0, mother.needs.water - dt * 0.12);
-          mother.needs.food = Math.max(0, mother.needs.food - dt * 0.1);
-          mother.nursingTimer = 5;
-        } else {
-          this.x = CAMP_CENTER.x;
-          this.y = CAMP_CENTER.y;
-          this.state = "resting";
-        }
-        return;
-      }
-      const nearLitFire = this.isNearLitFire(map2);
-      const isCold = !nearLitFire;
-      const inShelter = this.state === "resting" && this.actionIntent === "rest_shelter";
-      let coldPenalty = 1;
-      if (isCold) {
-        coldPenalty = inShelter ? 1.25 : 1.65;
-      }
-      const bodyScale = this.ageYears < 13 ? 0.55 : 1;
-      const isSocializing = this.state === "socializing";
-      const energyMod = isSocializing ? -2.2 : 0.25 * coldPenalty;
-      this.needs.water = Math.max(0, this.needs.water - dt * (0.75 * bodyScale));
-      this.needs.food = Math.max(0, this.needs.food - dt * (0.45 * coldPenalty * bodyScale * (isSocializing ? 0.6 : 1)));
-      this.needs.energy = Math.min(100, Math.max(0, this.needs.energy - dt * energyMod));
-      this.needs.bladder = Math.min(100, this.needs.bladder + dt * 0.8);
-      if (this.nursingTimer > 0) {
-        this.nursingTimer -= dt;
-      }
-      if (this.ageYears >= 13 && this.ageYears <= 48 && this.needs.water > 40 && this.needs.food > 40 && this.nursingTimer <= 0) {
-        this.needs.libido = Math.min(100, this.needs.libido + dt * 2.2);
-      } else {
-        this.needs.libido = Math.max(0, this.needs.libido - dt * 0.5);
-      }
-      if (this.pregnancyTimer > 0) {
-        this.pregnancyTimer -= dt;
-        if (this.pregnancyTimer <= 0) {
-          this.giveBirth(humans2, logEvent2);
-        }
-      }
-      if (this.state === "migrating") {
-        const dx = this.targetX - this.x;
-        const dy = this.targetY - this.y;
-        const dist = Math.hypot(dx, dy);
-        const speed = 1.25 * dt;
-        if (dist <= speed) {
-          this.x = this.targetX;
-          this.y = this.targetY;
-        } else {
-          this.x += dx / dist * speed;
-          this.y += dy / dist * speed;
-        }
-        return;
-      }
-      if (this.state === "idle") {
-        if (this.carried) {
-          this.setMoveTarget(map2, CAMP_CENTER.x, CAMP_CENTER.y, "deliver_stock");
-          return;
-        }
-        if (this.ageYears < 12) {
-          if (this.needs.bladder > 85) {
-            this.seekRelief(map2);
-            return;
-          }
-          if (this.needs.water < 55) {
-            this.seekWater(map2);
-            return;
-          }
-          if (this.needs.food < 50) {
-            this.seekFood(map2);
-            return;
-          }
-          if (this.needs.energy < 25) {
-            this.seekShelterOrFire(map2, humans2);
-            return;
-          }
-          const peers = humans2.filter((h) => h.id !== this.id && h.isAlive && h.ageYears >= 4 && h.ageYears < 12);
-          if (peers.length > 0 && Math.random() < 0.72) {
-            const friend = peers[Math.floor(Math.random() * peers.length)];
-            this.playWithPeer(friend, map2, logEvent2);
-            return;
-          }
-          if (this.ageYears >= 8) {
-            const hare = animals2.find((a) => a.isAlive && a.species === "hare");
-            if (hare && Math.random() < 0.35) {
-              this.setMoveTarget(map2, hare.x, hare.y, "hunt_animal", hare);
-              return;
-            }
-            if (Math.random() < 0.4) {
-              const rootSpot = findNearestRootDigSpot(map2, this.x, this.y);
-              if (rootSpot) {
-                this.setMoveTarget(map2, rootSpot.x, rootSpot.y, "dig_roots");
-                return;
-              }
-            }
-          }
-          if (Math.random() < 0.35) {
-            const bush = this.findNearestBushWithBerries(map2);
-            if (bush && Math.hypot(bush.x - CAMP_CENTER.x, bush.y - CAMP_CENTER.y) < 8) {
-              this.setMoveTarget(map2, bush.x, bush.y, "gather_berries");
-              return;
-            }
-          }
-          this.wanderNearCamp(map2);
-          return;
-        }
-        if (this.needs.bladder > 85) {
-          this.seekRelief(map2);
-        } else if (this.needs.water < 55) {
-          this.seekWater(map2);
-        } else if (this.needs.food < 50) {
-          this.seekFood(map2, animals2);
-        } else if (this.needs.energy < 25) {
-          this.seekShelterOrFire(map2, humans2);
-        } else if (this.role.includes("J\xE4ger") && animals2.length > 0) {
-          this.seekHunt(animals2, map2);
-        } else if (this.needs.libido > 50 && this.gender === "m") {
-          this.seekMate(humans2, map2);
-        } else if (this.needs.water > 55 && this.needs.food > 55) {
-          if (fireState.intensity > 15 && Math.random() < 0.45) {
-            if (this.seekCampfireCircle(map2, humans2, logEvent2)) return;
-          }
-          const nearbyPeer = humans2.find((h) => h.id !== this.id && h.isAlive && h.state === "idle" && Math.hypot(h.x - this.x, h.y - this.y) < 1.8);
-          if (nearbyPeer && Math.random() < 0.35) {
-            this.chatWithPeer(nearbyPeer, logEvent2);
-            return;
-          }
-          this.seekProductiveTask(map2, humans2, animals2);
-        } else {
-          this.wander(map2);
-        }
-      }
-      if (this.state === "moving") {
-        if (this.actionIntent === "hunt_animal" && this.huntTarget) {
-          if (!this.huntTarget.isAlive) {
-            this.state = "idle";
-            this.actionIntent = "idle";
-            this.huntTarget = null;
-            this.path = [];
-            return;
-          }
-          this.targetX = this.huntTarget.x;
-          this.targetY = this.huntTarget.y;
-          this.needs.energy = Math.max(0, this.needs.energy - dt * 0.4);
-          this.needs.water = Math.max(0, this.needs.water - dt * 0.3);
-          const distToTarget = Math.hypot(this.huntTarget.x - this.x, this.huntTarget.y - this.y);
-          if (distToTarget <= 1.25) {
-            this.x = this.huntTarget.x;
-            this.y = this.huntTarget.y;
-            const meat = this.huntTarget.meatYield || 5;
-            const aIcon = this.huntTarget.icon || "\u{1F98C}";
-            const aName = this.huntTarget.name || "Wildtier";
-            this.huntTarget.isAlive = false;
-            this.carried = "\u{1F969} Wildbret";
-            this.lastMeatYield = meat;
-            this.huntTarget = null;
-            this.utilityContributed += meat * 5;
-            spookWildlife(90);
-            logEvent2(`\u{1F3F9} ${this.name} hat ${aIcon} ${aName} erlegt! (+${meat} Fleisch f\xFCrs Lager)`);
-            this.setMoveTarget(map2, CAMP_CENTER.x, CAMP_CENTER.y, "deliver_stock");
-            return;
-          }
-          const lastWp = this.path && this.path[this.path.length - 1];
-          if (!lastWp || Math.hypot(this.huntTarget.x - lastWp.x, this.huntTarget.y - lastWp.y) > 2) {
-            const p = findPath(map2, this.x, this.y, this.huntTarget.x, this.huntTarget.y);
-            if (p) {
-              if (p.length > 1 && Math.hypot(p[0].x - this.x, p[0].y - this.y) < 0.4) p.shift();
-              this.path = p;
-            } else {
-              this.state = "idle";
-              this.actionIntent = "idle";
-              this.huntTarget = null;
-              this.path = [];
-              return;
-            }
-          }
-          if (this.needs.energy < 18 || this.needs.food < 28 || this.needs.water < 28) {
-            this.state = "idle";
-            this.actionIntent = "idle";
-            this.huntTarget = null;
-            this.path = [];
-            logEvent2(`\u{1F62E}\u200D\u{1F4A8} ${this.name} bricht die Jagd rechtzeitig ab, um nicht zu entkr\xE4ften.`);
-            return;
-          }
-        }
-        if (this.actionIntent === "deliver_stock" && Math.hypot(this.x - CAMP_CENTER.x, this.y - CAMP_CENTER.y) <= 1.5) {
-          this.path = [];
-          this.onArrived(map2, humans2, animals2, logEvent2);
-          return;
-        }
-        if (!this.path || this.path.length === 0) {
-          const distToEnd = Math.hypot(this.targetX - this.x, this.targetY - this.y);
-          if (distToEnd <= 0.4) {
-            this.x = this.targetX;
-            this.y = this.targetY;
-            this.onArrived(map2, humans2, animals2, logEvent2);
-          } else {
-            const p = findPath(map2, this.x, this.y, this.targetX, this.targetY);
-            if (p && p.length > 0) {
-              if (p.length > 1 && Math.hypot(p[0].x - this.x, p[0].y - this.y) < 0.4) p.shift();
-              this.path = p;
-            } else {
-              this.state = "idle";
-              this.actionIntent = "idle";
-              this.path = [];
-            }
-          }
-          return;
-        }
-        const targetWp = this.path[0];
-        if (!isTileWalkable(map2, targetWp.x, targetWp.y)) {
-          const p = findPath(map2, this.x, this.y, this.targetX, this.targetY);
-          if (p && p.length > 0) {
-            if (p.length > 1 && Math.hypot(p[0].x - this.x, p[0].y - this.y) < 0.4) p.shift();
-            this.path = p;
-          } else {
-            this.state = "idle";
-            this.actionIntent = "idle";
-            this.path = [];
-          }
-          return;
-        }
-        const dx = targetWp.x - this.x;
-        const dy = targetWp.y - this.y;
-        const dist = Math.hypot(dx, dy);
-        const cx = Math.round(this.x);
-        const cy = Math.round(this.y);
-        const curTile = map2[cy] && map2[cy][cx];
-        const onPath = curTile && curTile.type === "path";
-        const inWater = curTile && curTile.type === "water";
-        if (curTile) {
-          if (!curTile.plant && curTile.type !== "rock" && curTile.type !== "fire" && curTile.type !== "shelter") {
-            curTile.trample = Math.min(100, (curTile.trample || 0) + dt * 16);
-            if (curTile.type === "grass" && curTile.trample >= 55) {
-              curTile.type = "path";
-              curTile.isDesirePath = true;
-              curTile.flowerDots = [];
-            }
-          } else if (curTile.plant) {
-            curTile.trample = 0;
-          }
-        }
-        let terrainFactor = 1;
-        if (onPath) terrainFactor = 1.6;
-        else if (inWater) terrainFactor = 0.65;
-        const hasInfant = humans2.some((h) => h.isAlive && h.motherId === this.id && h.ageYears < 4);
-        const infantSpeedFactor = hasInfant ? 0.72 : 1;
-        const isHuntingSprint = this.actionIntent === "hunt_animal";
-        const sprintFactor = isHuntingSprint ? 1.45 : 1;
-        const speed = terrainFactor * sprintFactor * infantSpeedFactor * (this.ageYears > 50 ? 0.75 : 1) * dt;
-        if (dist <= speed) {
-          this.x = targetWp.x;
-          this.y = targetWp.y;
-          this.path.shift();
-          if (this.path.length === 0) {
-            this.onArrived(map2, humans2, animals2, logEvent2);
-          }
-        } else {
-          this.x += dx / dist * speed;
-          this.y += dy / dist * speed;
-        }
-      }
-      if (this.stateTimer > 0) {
-        this.stateTimer -= dt;
-        if (this.stateTimer <= 0) {
-          this.finishAction(map2, animals2, logEvent2);
-        }
-      }
-    }
-    die(cause, logEvent2) {
-      this.isAlive = false;
-      this.state = "dead";
-      this.deathCause = cause;
-      this.timeSinceDeathYears = 0;
-      this.tint = "#4b5563";
-      logEvent2(`\u{1FAA6} ${this.name} ist mit ${Math.floor(this.ageYears)} Jahren gestorben: ${cause}.`);
-    }
+  // src/human/tasks.js
+  var humanTaskMethods = {
     seekHunt(animals2, map2) {
       const liveAnimals = animals2.filter((a) => a.isAlive);
       if (liveAnimals.length === 0) return;
       liveAnimals.sort((a, b) => Math.hypot(a.x - this.x, a.y - this.y) - Math.hypot(b.x - this.x, b.y - this.y));
       const target = liveAnimals[0];
       this.setMoveTarget(map2, target.x, target.y, "hunt_animal", target);
-    }
+    },
     seekRelief(map2) {
       let bestTarget = null;
       let maxDist = 0;
@@ -2366,34 +2176,19 @@
       if (bestTarget) {
         this.setMoveTarget(map2, bestTarget.x, bestTarget.y, "relieve");
       }
-    }
+    },
     seekWater(map2) {
       if (campfireStock.water > 0 && Math.hypot(this.x - CAMP_CENTER.x, this.y - CAMP_CENTER.y) < 6) {
         this.setMoveTarget(map2, CAMP_CENTER.x, CAMP_CENTER.y, "drink_stock");
         return;
       }
-      let shoreTile = null;
-      let minDist = 9999;
-      for (let y = 1; y < MAP_SIZE - 1; y++) {
-        for (let x = 1; x < MAP_SIZE - 1; x++) {
-          if (map2[y][x].type === "grass" || map2[y][x].type === "path") {
-            const hasWaterNeighbor = map2[y - 1][x].type === "water" || map2[y + 1][x].type === "water" || map2[y][x - 1].type === "water" || map2[y][x + 1].type === "water";
-            if (hasWaterNeighbor) {
-              const d = Math.hypot(x - this.x, y - this.y);
-              if (d < minDist) {
-                minDist = d;
-                shoreTile = { x, y };
-              }
-            }
-          }
-        }
-      }
+      const shoreTile = findNearestShoreTile(map2, this.x, this.y);
       if (shoreTile) {
         this.setMoveTarget(map2, shoreTile.x, shoreTile.y, "drink_source");
       } else {
         this.wander(map2);
       }
-    }
+    },
     seekFood(map2, animals2 = []) {
       if (campfireStock.food > 0 && Math.hypot(this.x - CAMP_CENTER.x, this.y - CAMP_CENTER.y) < 7) {
         this.setMoveTarget(map2, CAMP_CENTER.x, CAMP_CENTER.y, "eat_stock");
@@ -2429,14 +2224,16 @@
         return;
       }
       this.wander(map2);
-    }
+    },
     seekShelterOrFire(map2, humans2 = []) {
       const availableShelters = [];
       for (let y = 0; y < MAP_SIZE; y++) {
         for (let x = 0; x < MAP_SIZE; x++) {
           const t = map2[y][x];
           if (t.type === "shelter" && (!t.shelter || t.shelter.condition > 15)) {
-            const occupants = humans2.filter((h) => h.isAlive && h.state === "resting" && h.actionIntent === "rest_shelter" && Math.round(h.x) === x && Math.round(h.y) === y).length;
+            const occupants = humans2.filter(
+              (h) => h.isAlive && h.state === "resting" && h.actionIntent === "rest_shelter" && Math.round(h.x) === x && Math.round(h.y) === y
+            ).length;
             const cap = t.shelter?.capacity || SHELTER_CONFIG.capacity;
             if (occupants < cap) {
               availableShelters.push({ x, y, dist: Math.hypot(x - this.x, y - this.y) });
@@ -2455,16 +2252,16 @@
         return;
       }
       this.wander(map2);
-    }
+    },
     seekMate(humans2, map2) {
       const mate = humans2.find((h) => h.isAlive && h.gender === "f" && h.ageYears >= 13 && h.ageYears <= 48 && h.pregnancyTimer === 0 && h.nursingTimer <= 0 && h.needs.libido > 25);
       if (mate) {
         this.mateTarget = mate;
         this.setMoveTarget(map2, Math.round(mate.x), Math.round(mate.y), "approach_mate");
       }
-    }
+    },
     seekProductiveTask(map2, humans2 = [], animals2 = []) {
-      if (this.role.includes("Sadhu")) {
+      if (this.role.includes("Feuerh\xFCter") || this.role.includes("Sadhu")) {
         this.setMoveTarget(map2, CAMP_CENTER.x, CAMP_CENTER.y, "bless_camp");
         return;
       }
@@ -2475,8 +2272,13 @@
         return;
       }
       const currentIntensity = fireTile && fireTile.fire ? fireTile.fire.intensity : fireState.intensity;
-      if (currentIntensity < 50 && campfireStock.wood > 0) {
+      const stokeThreshold = seasonState.isWinter ? 65 : 50;
+      if (currentIntensity < stokeThreshold && campfireStock.wood > 0) {
         this.setMoveTarget(map2, CAMP_CENTER.x, CAMP_CENTER.y, "stoke_fire");
+        return;
+      }
+      if ((this.injuredTimer > 0 || this.sickTimer > 0) && fireExists) {
+        this.seekShelterOrFire(map2, humans2);
         return;
       }
       let damagedShelter = null;
@@ -2518,14 +2320,16 @@
           return;
         }
       }
-      if (campfireStock.wood < 5) {
-        let tree = this.findNearestAdultTree(map2);
+      const targetWoodStock = seasonState.isAutumn || seasonState.isWinter ? 8 : 5;
+      if (campfireStock.wood < targetWoodStock) {
+        const tree = this.findNearestAdultTree(map2);
         if (tree) {
           this.setMoveTarget(map2, tree.x, tree.y, "chop_tree");
           return;
         }
       }
-      if (campfireStock.food < 6) {
+      const targetFoodStock = seasonState.isAutumn || seasonState.isWinter ? 9 : 6;
+      if (campfireStock.food < targetFoodStock) {
         const bush = findNearestBushWithBerries(map2, this.x, this.y);
         if (bush) {
           this.setMoveTarget(map2, bush.x, bush.y, "haul_food");
@@ -2549,36 +2353,51 @@
         }
       }
       if (campfireStock.water < 4) {
-        let shoreTile = null;
-        let minDist = 9999;
-        for (let y = 1; y < MAP_SIZE - 1; y++) {
-          for (let x = 1; x < MAP_SIZE - 1; x++) {
-            if (map2[y][x].type === "grass" || map2[y][x].type === "path") {
-              const hasWaterNeighbor = map2[y - 1][x].type === "water" || map2[y + 1][x].type === "water" || map2[y][x - 1].type === "water" || map2[y][x + 1].type === "water";
-              if (hasWaterNeighbor) {
-                const d = Math.hypot(x - this.x, y - this.y);
-                if (d < minDist) {
-                  minDist = d;
-                  shoreTile = { x, y };
-                }
-              }
-            }
-          }
-        }
+        const shoreTile = findNearestShoreTile(map2, this.x, this.y);
         if (shoreTile) {
           this.setMoveTarget(map2, shoreTile.x, shoreTile.y, "haul_water");
           return;
         }
       }
       this.wander(map2);
-    }
+    },
     wander(map2) {
       const rx = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(this.x + (Math.random() * 4 - 2))));
       const ry = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(this.y + (Math.random() * 4 - 2))));
       if (map2[ry] && map2[ry][rx] && (map2[ry][rx].type !== "water" || map2[ry][rx].isFord)) {
         this.setMoveTarget(map2, rx, ry, "idle");
       }
+    },
+    wanderNearCamp(map2) {
+      const rx = Math.max(1, Math.min(MAP_SIZE - 2, CAMP_CENTER.x + Math.floor((Math.random() - 0.5) * 8)));
+      const ry = Math.max(1, Math.min(MAP_SIZE - 2, CAMP_CENTER.y + Math.floor((Math.random() - 0.5) * 8)));
+      if (isTileWalkable(map2, rx, ry)) {
+        this.setMoveTarget(map2, rx, ry, "explore");
+      }
+    },
+    // Kompatibilitäts-Delegationen auf zentrale Suchfunktionen in foraging.js
+    findNearestTile(map2, type) {
+      return findNearestTile(map2, this.x, this.y, type);
+    },
+    findNearestBushWithBerries(map2) {
+      return findNearestBushWithBerries(map2, this.x, this.y);
+    },
+    findNearestAdultTree(map2) {
+      return findNearestAdultTree(map2, this.x, this.y);
+    },
+    isNearLitFire(map2) {
+      return isPositionNearLitFire(map2, this.x, this.y);
+    },
+    findNearestLitFire(map2) {
+      return findNearestLitFireTile(map2, this.x, this.y);
+    },
+    findFreeShelterSpot(map2, humans2 = []) {
+      return findFreeShelterSpotNearCamp(map2, humans2);
     }
+  };
+
+  // src/human/actions.js
+  var humanActionMethods = {
     onArrived(map2, humans2, animals2, logEvent2) {
       if (this.actionIntent === "hunt_animal") {
         if (this.huntTarget && this.huntTarget.isAlive) {
@@ -2615,6 +2434,10 @@
             this.needs.energy = Math.min(100, this.needs.energy + 15);
           } else {
             this.needs.food = Math.min(100, this.needs.food + 65);
+            if (this.sickTimer <= 0 && Math.random() < 0.2) {
+              this.sickTimer = 22;
+              logEvent2(`\u{1F922} ${this.name} hat ungegartes Essen aus dem kalten Lager gegessen und leidet an Magenparasiten!`);
+            }
           }
         }
         this.state = "idle";
@@ -2741,7 +2564,9 @@
       } else if (this.actionIntent === "sit_campfire") {
         this.state = "socializing";
         this.stateTimer = 10 + Math.random() * 8;
-        const peersAtFire = humans2.filter((h) => h.id !== this.id && h.isAlive && h.state === "socializing" && Math.hypot(h.x - CAMP_CENTER.x, h.y - CAMP_CENTER.y) < 3.2);
+        const peersAtFire = humans2.filter(
+          (h) => h.id !== this.id && h.isAlive && h.state === "socializing" && Math.hypot(h.x - CAMP_CENTER.x, h.y - CAMP_CENTER.y) < 3.2
+        );
         if (peersAtFire.length > 0 && Math.random() < 0.4) {
           logEvent2(`\u{1F525} ${this.name} gesellt sich zu ${peersAtFire[0].name} ans Feuer. Sie w\xE4rmen sich und teilen Laute.`);
         }
@@ -2753,7 +2578,7 @@
       } else {
         this.state = "idle";
       }
-    }
+    },
     finishAction(map2, animals2, logEvent2) {
       if (this.state === "hunting") {
         if (this.huntTarget) {
@@ -2897,6 +2722,52 @@
       }
       this.state = "idle";
     }
+  };
+
+  // src/human/social.js
+  var nextId = 4;
+  function allocNextHumanId() {
+    return nextId++;
+  }
+  var FEMALE_NAMES = [
+    "Nyx",
+    "Kora",
+    "Vana",
+    "Sula",
+    "Eila",
+    "Mira",
+    "Tala",
+    "Rhea",
+    "Ayla",
+    "Sunita",
+    "Brena",
+    "Zaya",
+    "Ona",
+    "Yara",
+    "Nesta",
+    "Luma",
+    "Dara",
+    "Saga",
+    "Thora"
+  ];
+  var MALE_NAMES = [
+    "Einar",
+    "Dagan",
+    "Krag",
+    "Toruk",
+    "Boran",
+    "Alok",
+    "Jaro",
+    "Bran",
+    "Tark",
+    "Vorn",
+    "Raban",
+    "Korm",
+    "Hagan",
+    "Wulf",
+    "Gorm"
+  ];
+  var humanSocialMethods = {
     seekCampfireCircle(map2, humans2, logEvent2) {
       const candidates = [];
       for (let dy = -2; dy <= 2; dy++) {
@@ -2919,7 +2790,7 @@
         return this.setMoveTarget(map2, chosen.x, chosen.y, "sit_campfire");
       }
       return false;
-    }
+    },
     chatWithPeer(peer, logEvent2) {
       this.state = "socializing";
       this.actionIntent = "chat";
@@ -2933,7 +2804,7 @@
       if (Math.random() < 0.35) {
         logEvent2(`\u{1F5E3}\uFE0F ${this.name} und ${peer.name} halten inne und tauschen Laute aus.`);
       }
-    }
+    },
     playWithPeer(friend, map2, logEvent2) {
       const rx = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(friend.x + (Math.random() - 0.5) * 4)));
       const ry = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(friend.y + (Math.random() - 0.5) * 4)));
@@ -2944,14 +2815,7 @@
           logEvent2(`\u{1F9D2} ${this.name} und ${friend.name} spielen ausgelassen Fangen im Lager.`);
         }
       }
-    }
-    wanderNearCamp(map2) {
-      const rx = Math.max(1, Math.min(MAP_SIZE - 2, CAMP_CENTER.x + Math.floor((Math.random() - 0.5) * 8)));
-      const ry = Math.max(1, Math.min(MAP_SIZE - 2, CAMP_CENTER.y + Math.floor((Math.random() - 0.5) * 8)));
-      if (isTileWalkable(map2, rx, ry)) {
-        this.setMoveTarget(map2, rx, ry, "explore");
-      }
-    }
+    },
     giveBirth(humans2, logEvent2) {
       const living = humans2.filter((h) => h.isAlive);
       const mCount = living.filter((h) => h.gender === "m").length;
@@ -2964,119 +2828,431 @@
       const babyName = pool[Math.floor(Math.random() * pool.length)];
       const babyTint = babyGender === "m" ? "#ea580c" : "#0ea5e9";
       this.nursingTimer = 50;
-      const baby = new _Human(nextId++, babyName, babyGender, "S\xE4ugling / Tragling", this.x + 0.1, this.y + 0.1, babyTint, 0);
+      const HumanClass = this.constructor;
+      const baby = new HumanClass(allocNextHumanId(), babyName, babyGender, "S\xE4ugling / Tragling", this.x + 0.1, this.y + 0.1, babyTint, 0);
       baby.motherId = this.id;
       humans2.push(baby);
       logEvent2(`\u{1F476} Geburt! ${babyGender === "m" ? "Junge" : "M\xE4dchen"} ${babyName} wird von Mutter ${this.name} getragen.`);
     }
-    findNearestTile(map2, type) {
-      let nearest = null;
-      let minDist = 99999;
-      for (let y = 0; y < MAP_SIZE; y++) {
-        for (let x = 0; x < MAP_SIZE; x++) {
-          if (map2[y][x].type === type) {
-            const d = Math.hypot(x - this.x, y - this.y);
-            if (d < minDist) {
-              minDist = d;
-              nearest = { x, y };
-            }
-          }
+  };
+
+  // src/human.js
+  var Human = class {
+    constructor(id, name, gender, role, x, y, tint, ageYears = 24) {
+      this.id = id;
+      this.name = name;
+      this.gender = gender;
+      this.role = role;
+      this.x = x;
+      this.y = y;
+      this.targetX = x;
+      this.targetY = y;
+      this.tint = tint;
+      this.motherId = null;
+      this.ageYears = ageYears;
+      this.maxAgeYears = 42 + Math.random() * 13;
+      this.isAlive = true;
+      this.needs = {
+        water: 75 + Math.random() * 15,
+        food: 80 + Math.random() * 10,
+        energy: 90 + Math.random() * 10,
+        bladder: 20 + Math.random() * 25,
+        libido: 20 + Math.random() * 20
+      };
+      this.carried = null;
+      this.utilityContributed = 0;
+      this.pregnancyTimer = 0;
+      this.nursingTimer = 0;
+      this.injuredTimer = 0;
+      this.sickTimer = 0;
+      this.state = "idle";
+      this.stateTimer = 0;
+      this.path = [];
+    }
+    setMoveTarget(map2, tx, ty, intent, huntTarget = null) {
+      this.targetX = tx;
+      this.targetY = ty;
+      this.actionIntent = intent;
+      this.huntTarget = huntTarget;
+      const p = findPath(map2, this.x, this.y, tx, ty);
+      if (!p) {
+        this.path = [];
+        this.state = "idle";
+        this.actionIntent = "idle";
+        this.huntTarget = null;
+        return false;
+      }
+      if (p.length > 1 && Math.hypot(p[0].x - this.x, p[0].y - this.y) < 0.4) {
+        p.shift();
+      }
+      this.path = p;
+      this.state = "moving";
+      return true;
+    }
+    update(dt, map2, humans2, animals2, logEvent2) {
+      if (!this.isAlive) {
+        if (dt > 0) {
+          this.timeSinceDeathYears = (this.timeSinceDeathYears || 0) + dt / 50;
+        }
+        return;
+      }
+      const prevAge = this.ageYears;
+      this.ageYears += dt / 50;
+      if (prevAge < 4 && this.ageYears >= 4) {
+        this.role = "Kind (Heranwachsend)";
+        logEvent2(`\u{1F9D2} ${this.name} ist 4 Jahre alt geworden und erkundet nun spielerisch das Lager!`);
+      }
+      if (prevAge < 12 && this.ageYears >= 12 && this.role.includes("Kind")) {
+        this.role = this.gender === "m" ? "J\xE4ger / Steinklopfer" : "Sammlerin & H\xFCterin";
+        logEvent2(`\u2728 ${this.name} hat das 12. Lebensjahr erreicht und arbeitet nun vollwertig f\xFCr den Klan.`);
+      }
+      if (this.needs.water <= 0) {
+        this.die("verdurstet (Wassermangel)", logEvent2);
+        return;
+      }
+      if (this.needs.food <= 0) {
+        this.die("verhungert (Nahrungsentzug)", logEvent2);
+        return;
+      }
+      if (this.ageYears >= this.maxAgeYears) {
+        this.die("biologisches Alterungsmaximum erreicht", logEvent2);
+        return;
+      }
+      if (this.ageYears < 4) {
+        this.role = "S\xE4ugling / Tragling";
+        this.carried = null;
+        let mother = humans2.find((h) => h.id === this.motherId && h.isAlive);
+        if (!mother) {
+          mother = humans2.find((h) => h.isAlive && h.gender === "f" && h.ageYears >= 13);
+          if (mother) this.motherId = mother.id;
+        }
+        if (mother) {
+          this.x = mother.x + 0.12;
+          this.y = mother.y + 0.08;
+          this.state = mother.state === "moving" ? "moving" : "resting";
+          this.actionIntent = "with_mother";
+          this.path = [];
+          this.needs.water = Math.max(this.needs.water, 75);
+          this.needs.food = Math.max(this.needs.food, 75);
+          this.needs.energy = Math.max(this.needs.energy, 70);
+          this.needs.libido = 0;
+          mother.needs.water = Math.max(0, mother.needs.water - dt * 0.12);
+          mother.needs.food = Math.max(0, mother.needs.food - dt * 0.1);
+          mother.nursingTimer = 5;
+        } else {
+          this.x = CAMP_CENTER.x;
+          this.y = CAMP_CENTER.y;
+          this.state = "resting";
+        }
+        return;
+      }
+      const nearLitFire = this.isNearLitFire(map2);
+      const isCold = !nearLitFire;
+      const inShelter = this.state === "resting" && this.actionIntent === "rest_shelter";
+      let coldPenalty = 1;
+      if (isCold) {
+        if (seasonState.isWinter) {
+          coldPenalty = inShelter ? 1.4 : 1.95;
+        } else if (seasonState.isAutumn) {
+          coldPenalty = inShelter ? 1.3 : 1.72;
+        } else {
+          coldPenalty = inShelter ? 1.2 : 1.55;
         }
       }
-      return nearest;
-    }
-    findNearestBushWithBerries(map2) {
-      let nearest = null;
-      let minDist = 99999;
-      for (let y = 0; y < MAP_SIZE; y++) {
-        for (let x = 0; x < MAP_SIZE; x++) {
-          const p = map2[y][x].plant;
-          if (p && p.type === "bush" && p.berries > 0) {
-            const d = Math.hypot(x - this.x, y - this.y);
-            if (d < minDist) {
-              minDist = d;
-              nearest = { x, y };
-            }
-          }
+      const healRate = nearLitFire || inShelter ? 1.8 : 0.75;
+      if (this.injuredTimer > 0) {
+        this.injuredTimer = Math.max(0, this.injuredTimer - dt * healRate);
+      }
+      if (this.sickTimer > 0) {
+        this.sickTimer = Math.max(0, this.sickTimer - dt * healRate);
+      }
+      if (seasonState.isWinter && isCold && !inShelter && this.needs.energy < 22 && this.sickTimer <= 0 && Math.random() < 0.015 * dt) {
+        this.sickTimer = 22;
+        logEvent2(`\u{1F912} ${this.name} hat sich in der eisigen Winterk\xE4lte ohne Feuer stark verk\xFChlt!`);
+      }
+      const bodyScale = this.ageYears < 13 ? 0.55 : 1;
+      const isSocializing = this.state === "socializing";
+      const sickPenalty = this.sickTimer > 0 ? 1.25 : 1;
+      const energyMod = isSocializing ? -2.2 : 0.25 * coldPenalty * sickPenalty;
+      this.needs.water = Math.max(0, this.needs.water - dt * (0.75 * bodyScale * sickPenalty));
+      this.needs.food = Math.max(0, this.needs.food - dt * (0.45 * coldPenalty * bodyScale * (isSocializing ? 0.6 : 1)));
+      this.needs.energy = Math.min(100, Math.max(0, this.needs.energy - dt * energyMod));
+      this.needs.bladder = Math.min(100, this.needs.bladder + dt * 0.8);
+      if (this.nursingTimer > 0) {
+        this.nursingTimer -= dt;
+      }
+      if (this.ageYears >= 13 && this.ageYears <= 48 && this.needs.water > 40 && this.needs.food > 40 && this.nursingTimer <= 0) {
+        this.needs.libido = Math.min(100, this.needs.libido + dt * 2.2);
+      } else {
+        this.needs.libido = Math.max(0, this.needs.libido - dt * 0.5);
+      }
+      if (this.pregnancyTimer > 0) {
+        this.pregnancyTimer -= dt;
+        if (this.pregnancyTimer <= 0) {
+          this.giveBirth(humans2, logEvent2);
         }
       }
-      return nearest;
-    }
-    findNearestAdultTree(map2) {
-      let nearest = null;
-      let minDist = 99999;
-      for (let y = 0; y < MAP_SIZE; y++) {
-        for (let x = 0; x < MAP_SIZE; x++) {
-          const p = map2[y][x].plant;
-          if (p && p.type === "tree" && p.stage >= 2) {
-            const d = Math.hypot(x - this.x, y - this.y);
-            if (d < minDist) {
-              minDist = d;
-              nearest = { x, y };
-            }
-          }
+      if (this.state === "migrating") {
+        const dx = this.targetX - this.x;
+        const dy = this.targetY - this.y;
+        const dist = Math.hypot(dx, dy);
+        const speed = 1.25 * dt;
+        if (dist <= speed) {
+          this.x = this.targetX;
+          this.y = this.targetY;
+        } else {
+          this.x += dx / dist * speed;
+          this.y += dy / dist * speed;
         }
+        return;
       }
-      return nearest;
-    }
-    isNearLitFire(map2) {
-      for (let y = 0; y < MAP_SIZE; y++) {
-        for (let x = 0; x < MAP_SIZE; x++) {
-          const t = map2[y][x];
-          if (t.type === "fire") {
-            const intensity = t.fire ? t.fire.intensity : x === CAMP_CENTER.x && y === CAMP_CENTER.y ? fireState.intensity : 100;
-            if (intensity > 15) {
-              const d = Math.hypot(x - this.x, y - this.y);
-              if (d <= 4.5) return true;
-            }
-          }
+      if (this.state === "idle") {
+        if (this.carried) {
+          this.setMoveTarget(map2, CAMP_CENTER.x, CAMP_CENTER.y, "deliver_stock");
+          return;
         }
-      }
-      return false;
-    }
-    findNearestLitFire(map2) {
-      let nearest = null;
-      let minDist = 99999;
-      for (let y = 0; y < MAP_SIZE; y++) {
-        for (let x = 0; x < MAP_SIZE; x++) {
-          const t = map2[y][x];
-          if (t.type === "fire") {
-            const intensity = t.fire ? t.fire.intensity : x === CAMP_CENTER.x && y === CAMP_CENTER.y ? fireState.intensity : 100;
-            if (intensity > 15) {
-              const d = Math.hypot(x - this.x, y - this.y);
-              if (d < minDist) {
-                minDist = d;
-                nearest = { x, y };
+        if (this.ageYears < 12) {
+          if (this.needs.bladder > 85) {
+            this.seekRelief(map2);
+            return;
+          }
+          if (this.needs.water < 55) {
+            this.seekWater(map2);
+            return;
+          }
+          if (this.needs.food < 50) {
+            this.seekFood(map2);
+            return;
+          }
+          if (this.needs.energy < 25) {
+            this.seekShelterOrFire(map2, humans2);
+            return;
+          }
+          const peers = humans2.filter((h) => h.id !== this.id && h.isAlive && h.ageYears >= 4 && h.ageYears < 12);
+          if (peers.length > 0 && Math.random() < 0.72) {
+            const friend = peers[Math.floor(Math.random() * peers.length)];
+            this.playWithPeer(friend, map2, logEvent2);
+            return;
+          }
+          if (this.ageYears >= 8) {
+            const hare = animals2.find((a) => a.isAlive && a.species === "hare");
+            if (hare && Math.random() < 0.35) {
+              this.setMoveTarget(map2, hare.x, hare.y, "hunt_animal", hare);
+              return;
+            }
+            if (Math.random() < 0.4) {
+              const rootSpot = findNearestRootDigSpot(map2, this.x, this.y);
+              if (rootSpot) {
+                this.setMoveTarget(map2, rootSpot.x, rootSpot.y, "dig_roots");
+                return;
               }
             }
           }
-        }
-      }
-      return nearest;
-    }
-    findFreeShelterSpot(map2, humans2 = []) {
-      for (let r = 1; r <= 4; r++) {
-        for (let dy = -r; dy <= r; dy++) {
-          for (let dx = -r; dx <= r; dx++) {
-            if (Math.abs(dx) === r || Math.abs(dy) === r) {
-              const sx = CAMP_CENTER.x + dx;
-              const sy = CAMP_CENTER.y + dy;
-              if (sx >= 1 && sx < MAP_SIZE - 1 && sy >= 1 && sy < MAP_SIZE - 1) {
-                const t = map2[sy][sx];
-                if ((t.type === "grass" || t.type === "path") && !t.plant && t.type !== "fire" && t.type !== "shelter") {
-                  const alreadyTargeted = humans2.some((h) => h.isAlive && h.actionIntent === "build_shelter" && Math.round(h.targetX) === sx && Math.round(h.targetY) === sy);
-                  if (!alreadyTargeted) {
-                    return { x: sx, y: sy };
-                  }
-                }
-              }
+          if (Math.random() < 0.35) {
+            const bush = this.findNearestBushWithBerries(map2);
+            if (bush && Math.hypot(bush.x - CAMP_CENTER.x, bush.y - CAMP_CENTER.y) < 8) {
+              this.setMoveTarget(map2, bush.x, bush.y, "gather_berries");
+              return;
             }
           }
+          this.wanderNearCamp(map2);
+          return;
+        }
+        if (this.needs.bladder > 85) {
+          this.seekRelief(map2);
+        } else if (this.needs.water < 55) {
+          this.seekWater(map2);
+        } else if (this.needs.food < 50) {
+          this.seekFood(map2, animals2);
+        } else if (this.needs.energy < 25) {
+          this.seekShelterOrFire(map2, humans2);
+        } else if (this.role.includes("J\xE4ger") && animals2.length > 0) {
+          this.seekHunt(animals2, map2);
+        } else if (this.needs.libido > 50 && this.gender === "m") {
+          this.seekMate(humans2, map2);
+        } else if (this.needs.water > 55 && this.needs.food > 55) {
+          if (fireState.intensity > 15 && Math.random() < 0.45) {
+            if (this.seekCampfireCircle(map2, humans2, logEvent2)) return;
+          }
+          const nearbyPeer = humans2.find((h) => h.id !== this.id && h.isAlive && h.state === "idle" && Math.hypot(h.x - this.x, h.y - this.y) < 1.8);
+          if (nearbyPeer && Math.random() < 0.35) {
+            this.chatWithPeer(nearbyPeer, logEvent2);
+            return;
+          }
+          this.seekProductiveTask(map2, humans2, animals2);
+        } else {
+          this.wander(map2);
         }
       }
-      return null;
+      if (this.state === "moving") {
+        if (this.actionIntent === "hunt_animal" && this.huntTarget) {
+          if (!this.huntTarget.isAlive) {
+            this.state = "idle";
+            this.actionIntent = "idle";
+            this.huntTarget = null;
+            this.path = [];
+            return;
+          }
+          this.targetX = this.huntTarget.x;
+          this.targetY = this.huntTarget.y;
+          this.needs.energy = Math.max(0, this.needs.energy - dt * 0.4);
+          this.needs.water = Math.max(0, this.needs.water - dt * 0.3);
+          const distToTarget = Math.hypot(this.huntTarget.x - this.x, this.huntTarget.y - this.y);
+          if (distToTarget <= 1.25) {
+            this.x = this.huntTarget.x;
+            this.y = this.huntTarget.y;
+            const meat = this.huntTarget.meatYield || 5;
+            const aIcon = this.huntTarget.icon || "\u{1F98C}";
+            const aName = this.huntTarget.name || "Wildtier";
+            const species = this.huntTarget.species || "deer";
+            const backupHunter = humans2.find(
+              (h) => h.id !== this.id && h.isAlive && h.ageYears >= 12 && Math.hypot(h.x - this.x, h.y - this.y) <= 5
+            );
+            let injuryRisk = 0;
+            if (species === "bison") injuryRisk = backupHunter ? 0.04 : 0.28;
+            else if (species === "boar") injuryRisk = backupHunter ? 0.03 : 0.18;
+            this.huntTarget.isAlive = false;
+            this.carried = "\u{1F969} Wildbret";
+            this.lastMeatYield = meat;
+            this.huntTarget = null;
+            this.utilityContributed += meat * 5;
+            if (backupHunter) backupHunter.utilityContributed += 10;
+            spookWildlife(90);
+            if (Math.random() < injuryRisk) {
+              this.injuredTimer = 26;
+              this.needs.energy = Math.max(10, this.needs.energy - 25);
+              logEvent2(`\u{1FA78} ${this.name} hat ${aIcon} ${aName} allein erlegt, wurde aber im Nahkampf verwundet und humpelt!`);
+            } else if (backupHunter && (species === "bison" || species === "boar")) {
+              logEvent2(`\u{1F3F9}\u{1F91D} Kooperationsjagd! ${this.name} und ${backupHunter.name} erlegen gemeinsam ${aIcon} ${aName} (+${meat} Fleisch)!`);
+            } else {
+              logEvent2(`\u{1F3F9} ${this.name} hat ${aIcon} ${aName} erlegt! (+${meat} Fleisch f\xFCrs Lager)`);
+            }
+            this.setMoveTarget(map2, CAMP_CENTER.x, CAMP_CENTER.y, "deliver_stock");
+            return;
+          }
+          const lastWp = this.path && this.path[this.path.length - 1];
+          if (!lastWp || Math.hypot(this.huntTarget.x - lastWp.x, this.huntTarget.y - lastWp.y) > 2) {
+            const p = findPath(map2, this.x, this.y, this.huntTarget.x, this.huntTarget.y);
+            if (p) {
+              if (p.length > 1 && Math.hypot(p[0].x - this.x, p[0].y - this.y) < 0.4) p.shift();
+              this.path = p;
+            } else {
+              this.state = "idle";
+              this.actionIntent = "idle";
+              this.huntTarget = null;
+              this.path = [];
+              return;
+            }
+          }
+          if (this.needs.energy < 18 || this.needs.food < 28 || this.needs.water < 28) {
+            this.state = "idle";
+            this.actionIntent = "idle";
+            this.huntTarget = null;
+            this.path = [];
+            logEvent2(`\u{1F62E}\u200D\u{1F4A8} ${this.name} bricht die Jagd rechtzeitig ab, um nicht zu entkr\xE4ften.`);
+            return;
+          }
+        }
+        if (this.actionIntent === "deliver_stock" && Math.hypot(this.x - CAMP_CENTER.x, this.y - CAMP_CENTER.y) <= 1.5) {
+          this.path = [];
+          this.onArrived(map2, humans2, animals2, logEvent2);
+          return;
+        }
+        if (!this.path || this.path.length === 0) {
+          const distToEnd = Math.hypot(this.targetX - this.x, this.targetY - this.y);
+          if (distToEnd <= 0.4) {
+            this.x = this.targetX;
+            this.y = this.targetY;
+            this.onArrived(map2, humans2, animals2, logEvent2);
+          } else {
+            const p = findPath(map2, this.x, this.y, this.targetX, this.targetY);
+            if (p && p.length > 0) {
+              if (p.length > 1 && Math.hypot(p[0].x - this.x, p[0].y - this.y) < 0.4) p.shift();
+              this.path = p;
+            } else {
+              this.state = "idle";
+              this.actionIntent = "idle";
+              this.path = [];
+            }
+          }
+          return;
+        }
+        const targetWp = this.path[0];
+        if (!isTileWalkable(map2, targetWp.x, targetWp.y)) {
+          const p = findPath(map2, this.x, this.y, this.targetX, this.targetY);
+          if (p && p.length > 0) {
+            if (p.length > 1 && Math.hypot(p[0].x - this.x, p[0].y - this.y) < 0.4) p.shift();
+            this.path = p;
+          } else {
+            this.state = "idle";
+            this.actionIntent = "idle";
+            this.path = [];
+          }
+          return;
+        }
+        const dx = targetWp.x - this.x;
+        const dy = targetWp.y - this.y;
+        const dist = Math.hypot(dx, dy);
+        const cx = Math.round(this.x);
+        const cy = Math.round(this.y);
+        const curTile = map2[cy] && map2[cy][cx];
+        const onPath = curTile && curTile.type === "path";
+        const inWater = curTile && curTile.type === "water";
+        if (curTile) {
+          if (!curTile.plant && curTile.type !== "rock" && curTile.type !== "fire" && curTile.type !== "shelter") {
+            curTile.trample = Math.min(100, (curTile.trample || 0) + dt * 16);
+            if (curTile.type === "grass" && curTile.trample >= 55) {
+              curTile.type = "path";
+              curTile.isDesirePath = true;
+              curTile.flowerDots = [];
+            }
+          } else if (curTile.plant) {
+            curTile.trample = 0;
+          }
+        }
+        let terrainFactor = 1;
+        if (onPath) terrainFactor = 1.6;
+        else if (inWater) terrainFactor = 0.65;
+        const hasInfant = humans2.some((h) => h.isAlive && h.motherId === this.id && h.ageYears < 4);
+        const infantSpeedFactor = hasInfant ? 0.72 : 1;
+        const isHuntingSprint = this.actionIntent === "hunt_animal";
+        const sprintFactor = isHuntingSprint ? 1.45 : 1;
+        const injuryFactor = this.injuredTimer > 0 ? 0.55 : 1;
+        const speed = terrainFactor * sprintFactor * infantSpeedFactor * injuryFactor * (this.ageYears > 40 ? 0.78 : 1) * dt;
+        if (dist <= speed) {
+          this.x = targetWp.x;
+          this.y = targetWp.y;
+          this.path.shift();
+          if (this.path.length === 0) {
+            this.onArrived(map2, humans2, animals2, logEvent2);
+          }
+        } else {
+          this.x += dx / dist * speed;
+          this.y += dy / dist * speed;
+        }
+      }
+      if (this.stateTimer > 0) {
+        this.stateTimer -= dt;
+        if (this.stateTimer <= 0) {
+          this.finishAction(map2, animals2, logEvent2);
+        }
+      }
+    }
+    die(cause, logEvent2) {
+      this.isAlive = false;
+      this.state = "dead";
+      this.deathCause = cause;
+      this.timeSinceDeathYears = 0;
+      this.tint = "#4b5563";
+      logEvent2(`\u{1FAA6} ${this.name} ist mit ${Math.floor(this.ageYears)} Jahren gestorben: ${cause}.`);
     }
   };
+  Object.assign(
+    Human.prototype,
+    humanTaskMethods,
+    humanActionMethods,
+    humanSocialMethods
+  );
   function maybeSpawnForeignWanderer(humans2, logEvent2, map2 = null) {
     const livingHumans = humans2.filter((h) => h.isAlive);
     if (livingHumans.length === 0) return;
@@ -3105,7 +3281,7 @@
     }
     const role = spawnGender === "m" ? "Wanderer (Neuer J\xE4ger)" : "Wanderin (Neue DNA)";
     const tint = spawnGender === "m" ? "#d97706" : "#10b981";
-    const wanderer = new Human(nextId++, name, spawnGender, role, edgeX, edgeY, tint, 18 + Math.floor(Math.random() * 5));
+    const wanderer = new Human(allocNextHumanId(), name, spawnGender, role, edgeX, edgeY, tint, 18 + Math.floor(Math.random() * 5));
     humans2.push(wanderer);
     logEvent2(`\u{1F6B6} ${spawnGender === "m" ? "Ein wandernder J\xE4ger" : "Eine wandernde Sammlerin"} (${name}, ${Math.floor(wanderer.ageYears)} J.) schlie\xDFt sich dem Klan an!`);
   }
@@ -3113,7 +3289,7 @@
     return [
       new Human(1, "Einar", "m", "J\xE4ger / Steinklopfer", CAMP_CENTER.x - 1, CAMP_CENTER.y - 1, "#d97706", 22),
       new Human(2, "Halla", "f", "Sammlerin & H\xFCterin", CAMP_CENTER.x, CAMP_CENTER.y + 1, "#0284c7", 20),
-      new Human(3, "Bruder Mohan", "m", "Sadhu / \xC4ltester", CAMP_CENTER.x + 1, CAMP_CENTER.y, "#7c3aed", 50),
+      new Human(3, "Bruder Mohan", "m", "\xC4ltester / Feuerh\xFCter", CAMP_CENTER.x + 1, CAMP_CENTER.y, "#7c3aed", 38),
       new Human(4, "Sula", "f", "Junge Sammlerin", CAMP_CENTER.x - 1, CAMP_CENTER.y + 1, "#10b981", 18)
     ];
   }
@@ -3371,18 +3547,19 @@
   function getStatusLabel(h) {
     if (!h.isAlive) return "verstorben";
     if (h.ageYears < 4) return "bei Mutter (Tragling)";
+    const healthSuffix = h.injuredTimer > 0 ? " (verletzt \u{1FA78})" : h.sickTimer > 0 ? " (krank \u{1F912})" : "";
     if (h.state === "socializing") {
-      return h.actionIntent === "sit_campfire" ? "am Feuer \u{1F525}" : "plaudert \u{1F5E3}\uFE0F";
+      return (h.actionIntent === "sit_campfire" ? "am Feuer \u{1F525}" : "plaudert \u{1F5E3}\uFE0F") + healthSuffix;
     }
-    if (h.state === "playing") return "spielt \u2B50";
-    if (h.state === "resting") return h.actionIntent === "rest_shelter" ? "in H\xFCtte \u26FA" : "ruht";
+    if (h.state === "playing") return "spielt \u2B50" + healthSuffix;
+    if (h.state === "resting") return (h.actionIntent === "rest_shelter" ? "in H\xFCtte \u26FA" : "ruht") + healthSuffix;
     if (h.state === "moving") {
-      if (h.actionIntent === "hunt_animal") return "auf Hetzjagd \u{1F3F9}";
-      if (h.actionIntent === "sit_campfire") return "geht zum Feuer";
-      if (h.actionIntent === "play") return "tollt umher";
-      return "unterwegs";
+      if (h.actionIntent === "hunt_animal") return "auf Hetzjagd \u{1F3F9}" + healthSuffix;
+      if (h.actionIntent === "sit_campfire") return "geht zum Feuer" + healthSuffix;
+      if (h.actionIntent === "play") return "tollt umher" + healthSuffix;
+      return "unterwegs" + healthSuffix;
     }
-    return h.state;
+    return h.state + healthSuffix;
   }
   function renderOrUpdateCards(humanList) {
     const existingCards = inspectorBox.querySelectorAll(".human-card");
@@ -3515,9 +3692,7 @@
       elapsedYearsEl.innerText = `Klan-Jahr ${Math.floor(elapsedYears)}`;
     }
     if (simSeasonEl) {
-      const seasons = ["Fr\xFChling \u{1F331}", "Sommer \u2600\uFE0F", "Herbst \u{1F342}", "Winter \u2744\uFE0F"];
-      const sIdx = Math.floor(elapsedYears % 1 * 4);
-      simSeasonEl.innerText = seasons[sIdx];
+      simSeasonEl.innerText = seasonState.label;
     }
     const living = humans.filter((h) => h.isAlive);
     const totalLiving = living.length;
@@ -3785,6 +3960,7 @@
     updateEcology(map, dtSec, logEvent);
     map = updateMigration(dtSec, map, humans, animals, campfireStock, fireState, (addY) => {
       elapsedYears += addY;
+      advanceSeasonClock(addY * 50);
     }, logEvent);
     updateSpookTimer(dtSec);
     maybeSpawnWildAnimal(animals, humans, logEvent, map);

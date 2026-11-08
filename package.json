@@ -5,7 +5,8 @@
   "main": "src/main.js",
   "type": "module",
   "scripts": {
-    "build": "npx esbuild src/main.js --bundle --outfile=bundle.js --format=iife",
+    "map": "node test/gen_codemap.mjs",
+    "build": "node test/gen_codemap.mjs && npx esbuild src/main.js --bundle --outfile=bundle.js --format=iife",
     "test": "node test/simulate.mjs",
     "start": "python3 -m http.server 8080"
   },

@@ -1,19 +1,10 @@
-import { campfireStock, fireState, MAP_SIZE, CAMP_CENTER, SHELTER_CONFIG } from './config.js';
+import { fireState, MAP_SIZE, CAMP_CENTER, seasonState } from './config.js';
 import { findPath, isTileWalkable } from './pathfinding.js';
-import { findNearestBushWithBerries, findNearestRootDigSpot, findNearestFishingSpot } from './foraging.js';
+import { findNearestRootDigSpot } from './foraging.js';
 import { spookWildlife } from './wildlife.js';
-
-let nextId = 4;
-
-const FEMALE_NAMES = [
-  'Nyx', 'Kora', 'Vana', 'Sula', 'Eila', 'Mira', 'Tala', 'Rhea', 'Ayla', 
-  'Sunita', 'Brena', 'Zaya', 'Ona', 'Yara', 'Nesta', 'Luma', 'Dara', 'Saga', 'Thora'
-];
-
-const MALE_NAMES = [
-  'Einar', 'Dagan', 'Krag', 'Toruk', 'Boran', 'Alok', 'Jaro', 'Bran', 'Tark', 
-  'Vorn', 'Raban', 'Korm', 'Hagan', 'Wulf', 'Gorm'
-];
+import { humanTaskMethods } from './human/tasks.js';
+import { humanActionMethods } from './human/actions.js';
+import { humanSocialMethods, FEMALE_NAMES, MALE_NAMES, allocNextHumanId } from './human/social.js';
 
 export class Human {
   constructor(id, name, gender, role, x, y, tint, ageYears = 24) {
@@ -29,7 +20,9 @@ export class Human {
     this.motherId = null; // Für Säuglinge (< 4 Jahre)
 
     this.ageYears = ageYears;
-    this.maxAgeYears = 58 + Math.random() * 14;
+    // Paläoanthropologischer Befund (Atapuerca / Sima de los Huesos, ~430.000 v. Chr.):
+    // Homo heidelbergensis erreichte selten mehr als 42 bis 55 Jahre (Zahnabschliff & Verschleiß).
+    this.maxAgeYears = 42 + Math.random() * 13;
     this.isAlive = true;
 
     this.needs = {
@@ -44,6 +37,8 @@ export class Human {
     this.utilityContributed = 0;
     this.pregnancyTimer = 0;
     this.nursingTimer = 0; // Stillpause nach Geburt
+    this.injuredTimer = 0; // Jagdtrauma / Knochenprellung (Humpeln)
+    this.sickTimer = 0;    // Wundfieber / Magenparasiten (durch rohes Fleisch oder Winterfrost)
 
     this.state = 'idle';
     this.stateTimer = 0;
@@ -151,7 +146,7 @@ export class Human {
       return; // Keine Erwachsenen-Tasks für Säuglinge!
     }
 
-    // 2. Biophysikalischer Stoffwechsel & Kälte
+    // 2. Biophysikalischer Stoffwechsel, Jahreszeiten-Kälte & Heilung
     // ECHTE TRENNUNG: Die Hütte isoliert nur passiv. Strahlungswärme liefert AUSSCHLIESSLICH das Feuer!
     // Kälte herrscht, wenn man nicht im Wärmeradius eines brennenden Feuers steht!
     const nearLitFire = this.isNearLitFire(map);
@@ -160,15 +155,38 @@ export class Human {
     let coldPenalty = 1.0;
 
     if (isCold) {
-      coldPenalty = inShelter ? 1.25 : 1.65; // Hütte schützt vor Windfrost, heizt aber nicht!
+      if (seasonState.isWinter) {
+        // Eisiger Pleistozän-Winter: Ohne Feuer droht rapider Kalorien- und Wärmeverlust!
+        coldPenalty = inShelter ? 1.40 : 1.95;
+      } else if (seasonState.isAutumn) {
+        coldPenalty = inShelter ? 1.30 : 1.72;
+      } else {
+        coldPenalty = inShelter ? 1.20 : 1.55;
+      }
+    }
+
+    // Heilung von Jagdverletzungen & Krankheit (am warmen Feuer oder in der Hütte doppelt so schnell!)
+    const healRate = (nearLitFire || inShelter) ? 1.8 : 0.75;
+    if (this.injuredTimer > 0) {
+      this.injuredTimer = Math.max(0, this.injuredTimer - dt * healRate);
+    }
+    if (this.sickTimer > 0) {
+      this.sickTimer = Math.max(0, this.sickTimer - dt * healRate);
+    }
+
+    // Unterkühlungs-Erkrankung im tiefen Winter ohne Feuer
+    if (seasonState.isWinter && isCold && !inShelter && this.needs.energy < 22 && this.sickTimer <= 0 && Math.random() < 0.015 * dt) {
+      this.sickTimer = 22.0;
+      logEvent(`🤒 ${this.name} hat sich in der eisigen Winterkälte ohne Feuer stark verkühlt!`);
     }
 
     // Kinder verbrauchen biophysikalisch weniger Kalorien & Wasser als schwere Erwachsene
     const bodyScale = this.ageYears < 13 ? 0.55 : 1.0;
     const isSocializing = (this.state === 'socializing');
-    const energyMod = isSocializing ? -2.2 : (0.25 * coldPenalty); // Regeneriert im Sozialzustand!
+    const sickPenalty = (this.sickTimer > 0) ? 1.25 : 1.0;
+    const energyMod = isSocializing ? -2.2 : (0.25 * coldPenalty * sickPenalty); // Regeneriert im Sozialzustand!
 
-    this.needs.water = Math.max(0, this.needs.water - dt * (0.75 * bodyScale));
+    this.needs.water = Math.max(0, this.needs.water - dt * (0.75 * bodyScale * sickPenalty));
     this.needs.food = Math.max(0, this.needs.food - dt * (0.45 * coldPenalty * bodyScale * (isSocializing ? 0.6 : 1.0)));
     this.needs.energy = Math.min(100, Math.max(0, this.needs.energy - dt * energyMod));
     this.needs.bladder = Math.min(100, this.needs.bladder + dt * 0.8);
@@ -287,15 +305,15 @@ export class Human {
         this.seekFood(map, animals);
       } else if (this.needs.energy < 25) {
         this.seekShelterOrFire(map, humans);
-      } 
+      }
       // Jäger sucht Wild
       else if (this.role.includes('Jäger') && animals.length > 0) {
         this.seekHunt(animals, map);
-      } 
+      }
       // Fortpflanzung (ab 50% Libido)
       else if (this.needs.libido > 50 && this.gender === 'm') {
         this.seekMate(humans, map);
-      } 
+      }
       // Nutzen, soziales Miteinander & Lager-Aufbau
       else if (this.needs.water > 55 && this.needs.food > 55) {
         // 1. Soziales Beisammensein am wärmenden Lagerfeuer (Klan-Kreis)
@@ -336,7 +354,7 @@ export class Human {
         this.needs.energy = Math.max(0, this.needs.energy - dt * 0.4);
         this.needs.water = Math.max(0, this.needs.water - dt * 0.3);
 
-        // Schlagdistanz erreicht? (Nahkampf mit Faustkeil / Stangen-Speer)
+        // Schlagdistanz erreicht? (Nahkampf mit Faustkeil / Holzlanze)
         const distToTarget = Math.hypot(this.huntTarget.x - this.x, this.huntTarget.y - this.y);
         if (distToTarget <= 1.25) {
           this.x = this.huntTarget.x;
@@ -344,13 +362,35 @@ export class Human {
           const meat = this.huntTarget.meatYield || 5;
           const aIcon = this.huntTarget.icon || '🦌';
           const aName = this.huntTarget.name || 'Wildtier';
+          const species = this.huntTarget.species || 'deer';
+
+          // Kooperationsjagd prüfen: Ist ein zweiter Klan-Jäger im Umkreis von 5 Kacheln dabei?
+          const backupHunter = humans.find(
+            h => h.id !== this.id && h.isAlive && h.ageYears >= 12 && Math.hypot(h.x - this.x, h.y - this.y) <= 5.0
+          );
+
+          // Wehrhaftes Großwild (Ur-Bison & Keiler): Alleinjagd birgt reales Verletzungsrisiko!
+          let injuryRisk = 0;
+          if (species === 'bison') injuryRisk = backupHunter ? 0.04 : 0.28;
+          else if (species === 'boar') injuryRisk = backupHunter ? 0.03 : 0.18;
+
           this.huntTarget.isAlive = false;
           this.carried = '🥩 Wildbret';
           this.lastMeatYield = meat;
           this.huntTarget = null;
           this.utilityContributed += (meat * 5);
+          if (backupHunter) backupHunter.utilityContributed += 10;
           spookWildlife(90.0);
-          logEvent(`🏹 ${this.name} hat ${aIcon} ${aName} erlegt! (+${meat} Fleisch fürs Lager)`);
+
+          if (Math.random() < injuryRisk) {
+            this.injuredTimer = 26.0;
+            this.needs.energy = Math.max(10, this.needs.energy - 25);
+            logEvent(`🩸 ${this.name} hat ${aIcon} ${aName} allein erlegt, wurde aber im Nahkampf verwundet und humpelt!`);
+          } else if (backupHunter && (species === 'bison' || species === 'boar')) {
+            logEvent(`🏹🤝 Kooperationsjagd! ${this.name} und ${backupHunter.name} erlegen gemeinsam ${aIcon} ${aName} (+${meat} Fleisch)!`);
+          } else {
+            logEvent(`🏹 ${this.name} hat ${aIcon} ${aName} erlegt! (+${meat} Fleisch fürs Lager)`);
+          }
           this.setMoveTarget(map, CAMP_CENTER.x, CAMP_CENTER.y, 'deliver_stock');
           return;
         }
@@ -461,7 +501,8 @@ export class Human {
 
       const isHuntingSprint = (this.actionIntent === 'hunt_animal');
       const sprintFactor = isHuntingSprint ? 1.45 : 1.0;
-      const speed = terrainFactor * sprintFactor * infantSpeedFactor * (this.ageYears > 50 ? 0.75 : 1.0) * dt;
+      const injuryFactor = (this.injuredTimer > 0) ? 0.55 : 1.0; // Humpeln bei Jagdverletzung
+      const speed = terrainFactor * sprintFactor * infantSpeedFactor * injuryFactor * (this.ageYears > 40 ? 0.78 : 1.0) * dt;
 
       if (dist <= speed) {
         this.x = targetWp.x;
@@ -493,842 +534,14 @@ export class Human {
     this.tint = '#4b5563';
     logEvent(`🪦 ${this.name} ist mit ${Math.floor(this.ageYears)} Jahren gestorben: ${cause}.`);
   }
-
-  seekHunt(animals, map) {
-    const liveAnimals = animals.filter(a => a.isAlive);
-    if (liveAnimals.length === 0) return;
-    // Nächstes Tier anvisieren
-    liveAnimals.sort((a, b) => Math.hypot(a.x - this.x, a.y - this.y) - Math.hypot(b.x - this.x, b.y - this.y));
-    const target = liveAnimals[0];
-    this.setMoveTarget(map, target.x, target.y, 'hunt_animal', target);
-  }
-
-  seekRelief(map) {
-    let bestTarget = null;
-    let maxDist = 0;
-    for (let i = 0; i < 8; i++) {
-      const rx = Math.floor(Math.random() * MAP_SIZE);
-      const ry = Math.floor(Math.random() * MAP_SIZE);
-      if (map[ry][rx].type !== 'water' && map[ry][rx].type !== 'fire') {
-        const d = Math.hypot(rx - CAMP_CENTER.x, ry - CAMP_CENTER.y);
-        if (d > maxDist) {
-          maxDist = d;
-          bestTarget = { x: rx, y: ry };
-        }
-      }
-    }
-    if (bestTarget) {
-      this.setMoveTarget(map, bestTarget.x, bestTarget.y, 'relieve');
-    }
-  }
-
-  seekWater(map) {
-    if (campfireStock.water > 0 && Math.hypot(this.x - CAMP_CENTER.x, this.y - CAMP_CENTER.y) < 6) {
-      this.setMoveTarget(map, CAMP_CENTER.x, CAMP_CENTER.y, 'drink_stock');
-      return;
-    }
-    // Ufer-Kachel suchen (Grasfeld, das direkt an Wasser grenzt – nicht das Wasser selbst betreten!)
-    let shoreTile = null;
-    let minDist = 9999;
-    for (let y = 1; y < MAP_SIZE - 1; y++) {
-      for (let x = 1; x < MAP_SIZE - 1; x++) {
-        if (map[y][x].type === 'grass' || map[y][x].type === 'path') {
-          // Prüfen, ob Wasser-Nachbar vorhanden ist
-          const hasWaterNeighbor = (
-            map[y-1][x].type === 'water' || map[y+1][x].type === 'water' ||
-            map[y][x-1].type === 'water' || map[y][x+1].type === 'water'
-          );
-          if (hasWaterNeighbor) {
-            const d = Math.hypot(x - this.x, y - this.y);
-            if (d < minDist) {
-              minDist = d;
-              shoreTile = { x, y };
-            }
-          }
-        }
-      }
-    }
-
-    if (shoreTile) {
-      this.setMoveTarget(map, shoreTile.x, shoreTile.y, 'drink_source');
-    } else {
-      this.wander(map);
-    }
-  }
-
-  seekFood(map, animals = []) {
-    // 1. Vorrat am Lagerfeuer
-    if (campfireStock.food > 0 && Math.hypot(this.x - CAMP_CENTER.x, this.y - CAMP_CENTER.y) < 7) {
-      this.setMoveTarget(map, CAMP_CENTER.x, CAMP_CENTER.y, 'eat_stock');
-      return;
-    }
-
-    // 2. Nächster Beerenstrauch mit Früchten
-    const bush = findNearestBushWithBerries(map, this.x, this.y);
-    if (bush && Math.hypot(bush.x - this.x, bush.y - this.y) < 9) {
-      this.setMoveTarget(map, bush.x, bush.y, 'eat_bush');
-      return;
-    }
-
-    // 3. Fischen am Gewässer (ab 10 Jahren)
-    if (this.ageYears >= 10) {
-      const fishSpot = findNearestFishingSpot(map, this.x, this.y);
-      if (fishSpot && Math.hypot(fishSpot.x - this.x, fishSpot.y - this.y) < 9) {
-        this.setMoveTarget(map, fishSpot.x, fishSpot.y, 'fish_river');
-        return;
-      }
-    }
-
-    // 4. Wurzeln/Knollen graben mit Grabstock
-    const rootSpot = findNearestRootDigSpot(map, this.x, this.y);
-    if (rootSpot && Math.hypot(rootSpot.x - this.x, rootSpot.y - this.y) < 10) {
-      this.setMoveTarget(map, rootSpot.x, rootSpot.y, 'dig_roots');
-      return;
-    }
-
-    // 5. Jagd auf Tiere (falls alt genug)
-    if (this.ageYears >= 12 && animals && animals.some(a => a.isAlive)) {
-      this.seekHunt(animals, map);
-      return;
-    }
-
-    if (bush) {
-      this.setMoveTarget(map, bush.x, bush.y, 'eat_bush');
-      return;
-    }
-    if (rootSpot) {
-      this.setMoveTarget(map, rootSpot.x, rootSpot.y, 'dig_roots');
-      return;
-    }
-
-    this.wander(map);
-  }
-
-  seekShelterOrFire(map, humans = []) {
-    // 1. Suche freie Schutzhütte (Kapazität: Max 2 Personen pro Hütte!)
-    const availableShelters = [];
-    for (let y = 0; y < MAP_SIZE; y++) {
-      for (let x = 0; x < MAP_SIZE; x++) {
-        const t = map[y][x];
-        if (t.type === 'shelter' && (!t.shelter || t.shelter.condition > 15)) {
-          // Prüfen wie viele Personen aktuell in dieser Hütte schlafen
-          const occupants = humans.filter(h => h.isAlive && h.state === 'resting' && h.actionIntent === 'rest_shelter' && Math.round(h.x) === x && Math.round(h.y) === y).length;
-          const cap = t.shelter?.capacity || SHELTER_CONFIG.capacity;
-          if (occupants < cap) {
-            availableShelters.push({ x, y, dist: Math.hypot(x - this.x, y - this.y) });
-          }
-        }
-      }
-    }
-
-    if (availableShelters.length > 0) {
-      availableShelters.sort((a, b) => a.dist - b.dist);
-      this.setMoveTarget(map, availableShelters[0].x, availableShelters[0].y, 'rest_shelter');
-      return;
-    }
-
-    // Wenn alle Hütten voll sind oder keine steht: Rast an einer warmen Feuerstelle
-    const fire = this.findNearestLitFire(map);
-    if (fire) {
-      this.setMoveTarget(map, fire.x, fire.y, 'rest_fire');
-      return;
-    }
-
-    this.wander(map);
-  }
-
-  seekMate(humans, map) {
-    const mate = humans.find(h => (
-      h.isAlive && 
-      h.gender === 'f' && 
-      h.ageYears >= 13 && 
-      h.ageYears <= 48 && 
-      h.pregnancyTimer === 0 && 
-      h.nursingTimer <= 0 && 
-      h.needs.libido > 25
-    ));
-    if (mate) {
-      this.mateTarget = mate;
-      this.setMoveTarget(map, Math.round(mate.x), Math.round(mate.y), 'approach_mate');
-    }
-  }
-
-  seekProductiveTask(map, humans = [], animals = []) {
-    if (this.role.includes('Sadhu')) {
-      this.setMoveTarget(map, CAMP_CENTER.x, CAMP_CENTER.y, 'bless_camp');
-      return;
-    }
-
-    // 1. OBERSTE PRIORITÄT: FEUER ENTFALEN ODER HÜTEN!
-    // Ohne Feuer herrscht Kälte und rohes Essen. Feuer hat absoluten Vorrang vor der Hütte!
-    const fireTile = map[CAMP_CENTER.y] && map[CAMP_CENTER.y][CAMP_CENTER.x];
-    const fireExists = (fireTile && fireTile.type === 'fire' && (fireTile.fire?.intensity > 15 || fireState.intensity > 15));
-
-    if (!fireExists && campfireStock.wood > 0) {
-      this.setMoveTarget(map, CAMP_CENTER.x, CAMP_CENTER.y, 'rekindle_fire');
-      return;
-    }
-
-    // Wenn Feuer brennt, aber schwach wird (< 50%): Nachlegen
-    const currentIntensity = (fireTile && fireTile.fire) ? fireTile.fire.intensity : fireState.intensity;
-    if (currentIntensity < 50 && campfireStock.wood > 0) {
-      this.setMoveTarget(map, CAMP_CENTER.x, CAMP_CENTER.y, 'stoke_fire');
-      return;
-    }
-
-    // 2. HÜTTEN-WARTUNG: Wenn eine Hütte baufällig wird (< 65% Haltbarkeit), ausbessern!
-    let damagedShelter = null;
-    let totalShelterCapacity = 0;
-    for (let y = 0; y < MAP_SIZE; y++) {
-      for (let x = 0; x < MAP_SIZE; x++) {
-        const t = map[y][x];
-        if (t.type === 'shelter') {
-          const cond = t.shelter ? t.shelter.condition : 100;
-          if (cond > 15) {
-            totalShelterCapacity += (t.shelter?.capacity || SHELTER_CONFIG.capacity);
-          }
-          if (cond < SHELTER_CONFIG.repairThreshold && !damagedShelter) {
-            damagedShelter = { x, y };
-          }
-        }
-      }
-    }
-
-    if (damagedShelter && campfireStock.wood >= 1) {
-      this.setMoveTarget(map, damagedShelter.x, damagedShelter.y, 'repair_shelter');
-      return;
-    }
-
-    // 3. HÜTTEN-KAPAZITÄT (Max 2 Personen pro Hütte):
-    // Braucht der Clan weitere Hütten, weil die Population gewachsen ist?
-    const livingClanSize = humans.filter(h => h.isAlive).length;
-    const inConstruction = humans.filter(h => h.isAlive && (h.actionIntent === 'build_shelter' || h.state === 'building')).length;
-    const projectedCapacity = totalShelterCapacity + (inConstruction * SHELTER_CONFIG.capacity);
-
-    if (projectedCapacity < livingClanSize && fireExists) {
-      if (campfireStock.wood >= 2 && campfireStock.stone >= 1) {
-        const freeSpot = this.findFreeShelterSpot(map, humans);
-        if (freeSpot) {
-          this.setMoveTarget(map, freeSpot.x, freeSpot.y, 'build_shelter');
-          return;
-        }
-      }
-    }
-
-    // Wenn Steine knapp sind (< 3): Steine vom Felsen sammeln!
-    if (campfireStock.stone < 3) {
-      const rock = this.findNearestTile(map, 'rock');
-      if (rock) {
-        this.setMoveTarget(map, rock.x, rock.y, 'mine_rock');
-        return;
-      }
-    }
-
-    // Wenn Brennholz knapp wird (< 4): Holz hacken hat hohe Priorität!
-    if (campfireStock.wood < 5) {
-      let tree = this.findNearestAdultTree(map);
-      if (tree) {
-        this.setMoveTarget(map, tree.x, tree.y, 'chop_tree');
-        return;
-      }
-    }
-
-    if (campfireStock.food < 6) {
-      // 1. Reife Beeren ernten
-      const bush = findNearestBushWithBerries(map, this.x, this.y);
-      if (bush) {
-        this.setMoveTarget(map, bush.x, bush.y, 'haul_food');
-        return;
-      }
-      // 2. Fischen am Fluss (ab 12 Jahren)
-      if (this.ageYears >= 12) {
-        const fishSpot = findNearestFishingSpot(map, this.x, this.y);
-        if (fishSpot) {
-          this.setMoveTarget(map, fishSpot.x, fishSpot.y, 'fish_river');
-          return;
-        }
-      }
-      // 3. Wurzeln/Knollen graben
-      const rootSpot = findNearestRootDigSpot(map, this.x, this.y);
-      if (rootSpot) {
-        this.setMoveTarget(map, rootSpot.x, rootSpot.y, 'dig_roots');
-        return;
-      }
-      // 4. Jagd auf Tiere (falls Jäger/Erwachsener)
-      if (this.ageYears >= 12 && animals && animals.some(a => a.isAlive)) {
-        this.seekHunt(animals, map);
-        return;
-      }
-    }
-
-    if (campfireStock.water < 4) {
-      // Wasser holen am Ufer
-      let shoreTile = null;
-      let minDist = 9999;
-      for (let y = 1; y < MAP_SIZE - 1; y++) {
-        for (let x = 1; x < MAP_SIZE - 1; x++) {
-          if (map[y][x].type === 'grass' || map[y][x].type === 'path') {
-            const hasWaterNeighbor = (
-              map[y-1][x].type === 'water' || map[y+1][x].type === 'water' ||
-              map[y][x-1].type === 'water' || map[y][x+1].type === 'water'
-            );
-            if (hasWaterNeighbor) {
-              const d = Math.hypot(x - this.x, y - this.y);
-              if (d < minDist) {
-                minDist = d;
-                shoreTile = { x, y };
-              }
-            }
-          }
-        }
-      }
-      if (shoreTile) {
-        this.setMoveTarget(map, shoreTile.x, shoreTile.y, 'haul_water');
-        return;
-      }
-    }
-
-    this.wander(map);
-  }
-
-  wander(map) {
-    const rx = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(this.x + (Math.random() * 4 - 2))));
-    const ry = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(this.y + (Math.random() * 4 - 2))));
-    if (map[ry] && map[ry][rx] && (map[ry][rx].type !== 'water' || map[ry][rx].isFord)) {
-      this.setMoveTarget(map, rx, ry, 'idle');
-    }
-  }
-
-  onArrived(map, humans, animals, logEvent) {
-    if (this.actionIntent === 'hunt_animal') {
-      if (this.huntTarget && this.huntTarget.isAlive) {
-        this.state = 'hunting';
-        this.stateTimer = 2.5;
-      } else {
-        this.state = 'idle';
-      }
-    } else if (this.actionIntent === 'relieve') {
-      this.state = 'relieving';
-      this.stateTimer = 3.0;
-    } else if (this.actionIntent === 'drink_source') {
-      this.state = 'drinking';
-      this.stateTimer = 2.5;
-    } else if (this.actionIntent === 'drink_stock') {
-      if (campfireStock.water > 0) campfireStock.water--;
-      this.needs.water = 100;
-      this.state = 'idle';
-    } else if (this.actionIntent === 'eat_bush') {
-      const tile = map[Math.round(this.y)][Math.round(this.x)];
-      if (tile && tile.plant && tile.plant.berries > 0) {
-        tile.plant.berries--;
-        this.state = 'foraging';
-        this.stateTimer = 3.0;
-        // Rohe Beeren direkt vom Strauch: Mäßige Sättigung (nur +55%), weil unaufbereitet
-        this.needs.food = Math.min(100, this.needs.food + 55);
-      } else {
-        this.state = 'idle';
-      }
-    } else if (this.actionIntent === 'eat_stock') {
-      if (campfireStock.food > 0) {
-        campfireStock.food--;
-        // ECHTE TRENNUNG: Am brennenden Feuer gegarte Nahrung sättigt zu 100% und spendet Energie!
-        if (fireState.intensity > 20) {
-          this.needs.food = 100;
-          this.needs.energy = Math.min(100, this.needs.energy + 15); // Gegarte Kalorien entlasten den Magen
-        } else {
-          // Kaltes Lager: Nahrung ist kalt, zäh und sättigt schlechter (+65%)
-          this.needs.food = Math.min(100, this.needs.food + 65);
-        }
-      }
-      this.state = 'idle';
-    } else if (this.actionIntent === 'mine_rock') {
-      this.state = 'mining';
-      this.stateTimer = 4.0;
-    } else if (this.actionIntent === 'chop_tree') {
-      this.state = 'chopping';
-      this.stateTimer = 4.5;
-    } else if (this.actionIntent === 'dig_roots') {
-      this.state = 'digging';
-      this.stateTimer = 3.2;
-    } else if (this.actionIntent === 'fish_river') {
-      this.state = 'fishing';
-      this.stateTimer = 4.0;
-    } else if (this.actionIntent === 'haul_food') {
-      const tile = map[Math.round(this.y)][Math.round(this.x)];
-      if (tile && tile.plant && tile.plant.berries > 0) {
-        tile.plant.berries--;
-        this.carried = '🍇 Beeren';
-        this.setMoveTarget(map, CAMP_CENTER.x, CAMP_CENTER.y, 'deliver_stock');
-      } else {
-        this.state = 'idle';
-      }
-    } else if (this.actionIntent === 'haul_water') {
-      this.carried = '💧 Wasser';
-      this.setMoveTarget(map, CAMP_CENTER.x, CAMP_CENTER.y, 'deliver_stock');
-    } else if (this.actionIntent === 'build_shelter') {
-      this.state = 'building';
-      this.stateTimer = 6.0;
-    } else if (this.actionIntent === 'repair_shelter') {
-      this.state = 'repairing';
-      this.stateTimer = 4.0;
-    } else if (this.actionIntent === 'stoke_fire') {
-      if (campfireStock.wood > 0) {
-        campfireStock.wood--;
-        const gx = Math.round(this.x);
-        const gy = Math.round(this.y);
-        const fTile = map[gy] && map[gy][gx];
-        if (fTile && fTile.type === 'fire') {
-          if (!fTile.fire) fTile.fire = { intensity: 50, woodBurnTimer: 0, wood: 0, isCampCenter: (gx === CAMP_CENTER.x && gy === CAMP_CENTER.y) };
-          fTile.fire.intensity = Math.min(100, fTile.fire.intensity + 45);
-          if (fTile.fire.isCampCenter) fireState.intensity = fTile.fire.intensity;
-        } else {
-          fireState.intensity = Math.min(100, fireState.intensity + 45);
-        }
-        this.utilityContributed += 15;
-        logEvent(`🔥 ${this.name} hat Holz nachgelegt und das Feuer geschürt!`);
-      }
-      this.state = 'idle';
-    } else if (this.actionIntent === 'rekindle_fire') {
-      // Wenn das Feuer komplett aus war: Aufwändiges Feuer-Bohren / Schlagen (Faustkeil & Zunder)
-      if (campfireStock.wood > 0) {
-        campfireStock.wood--;
-        const gx = Math.round(this.x);
-        const gy = Math.round(this.y);
-        if (map[gy] && map[gy][gx]) {
-          map[gy][gx].type = 'fire';
-          map[gy][gx].plant = null;
-          map[gy][gx].fire = {
-            intensity: 85,
-            woodBurnTimer: 0,
-            wood: 0,
-            isCampCenter: (gx === CAMP_CENTER.x && gy === CAMP_CENTER.y)
-          };
-        }
-        fireState.intensity = 85;
-        this.utilityContributed += 35;
-        logEvent(`✨ ${this.name} hat mit Faustkeilen Funken geschlagen und das Stammesfeuer entfacht!`);
-      }
-      this.state = 'idle';
-    } else if (this.actionIntent === 'deliver_stock') {
-      if (this.carried === '🪨 Stein') {
-        campfireStock.stone++;
-        this.utilityContributed += 15;
-      } else if (this.carried === '🪵 Holz') {
-        campfireStock.wood++;
-        this.utilityContributed += 12;
-      } else if (this.carried === '🍇 Beeren') {
-        campfireStock.food++;
-        this.utilityContributed += 8;
-      } else if (this.carried === '🥔 Wurzelknollen') {
-        campfireStock.food += 2;
-        this.utilityContributed += 10;
-        logEvent(`🥔 ${this.name} liefert nahrhafte Knollen/Wurzeln (+2 Vorrat).`);
-      } else if (this.carried === '🐟 Flussfisch') {
-        campfireStock.food += 2;
-        this.utilityContributed += 12;
-        logEvent(`🐟 ${this.name} bringt frischen Fisch ans Lagerfeuer (+2 Vorrat).`);
-      } else if (this.carried === '💧 Wasser') {
-        campfireStock.water++;
-        this.utilityContributed += 8;
-      } else if (this.carried === '🥩 Wildbret') {
-        const yieldAmt = this.lastMeatYield || 5;
-        campfireStock.food += yieldAmt;
-        this.utilityContributed += (yieldAmt * 5);
-        logEvent(`🍖 ${this.name} bringt frisches Fleisch ins Lager! Vorrat +${yieldAmt}.`);
-      }
-      this.carried = null;
-      this.state = 'idle';
-    } else if (this.actionIntent === 'rest_shelter') {
-      this.state = 'resting';
-      this.stateTimer = 5.0;
-      // Hütte bietet mechanischen Schutz & Windstille -> Schnelle Energie-Regeneration (Tiefschlaf)
-      this.needs.energy = Math.min(100, this.needs.energy + 85);
-    } else if (this.actionIntent === 'rest_fire') {
-      this.state = 'resting';
-      this.stateTimer = 5.0;
-      // Am offenen Feuer: Wärme, aber unruhigerer Schlaf als in der geschützten Hütte
-      this.needs.energy = Math.min(100, this.needs.energy + 50);
-    } else if (this.actionIntent === 'approach_mate') {
-      this.state = 'mating';
-      this.stateTimer = 4.0;
-      if (this.mateTarget) {
-        this.mateTarget.state = 'mating';
-        this.mateTarget.stateTimer = 4.0;
-      }
-    } else if (this.actionIntent === 'bless_camp') {
-      this.state = 'resting';
-      this.stateTimer = 5.0;
-      for (const h of humans) {
-        if (h.isAlive && Math.hypot(h.x - CAMP_CENTER.x, h.y - CAMP_CENTER.y) < 5) {
-          h.needs.energy = Math.min(100, h.needs.energy + 25);
-        }
-      }
-      this.utilityContributed += 5;
-    } else if (this.actionIntent === 'sit_campfire') {
-      this.state = 'socializing';
-      this.stateTimer = 10.0 + Math.random() * 8.0;
-      // Gibt es Artgenossen am Feuer?
-      const peersAtFire = humans.filter(h => h.id !== this.id && h.isAlive && h.state === 'socializing' && Math.hypot(h.x - CAMP_CENTER.x, h.y - CAMP_CENTER.y) < 3.2);
-      if (peersAtFire.length > 0 && Math.random() < 0.4) {
-        logEvent(`🔥 ${this.name} gesellt sich zu ${peersAtFire[0].name} ans Feuer. Sie wärmen sich und teilen Laute.`);
-      }
-    } else if (this.actionIntent === 'play') {
-      this.state = 'playing';
-      this.stateTimer = 4.0 + Math.random() * 3.0;
-    } else if (this.actionIntent === 'explore') {
-      this.state = 'idle';
-    } else {
-      this.state = 'idle';
-    }
-  }
-
-  finishAction(map, animals, logEvent) {
-    if (this.state === 'hunting') {
-      if (this.huntTarget) {
-        const meat = this.huntTarget.meatYield || 5;
-        const aName = this.huntTarget.name || 'Wild';
-        this.huntTarget.isAlive = false;
-        this.carried = '🥩 Wildbret';
-        this.lastMeatYield = meat;
-        spookWildlife(90.0);
-        this.setMoveTarget(map, CAMP_CENTER.x, CAMP_CENTER.y, 'deliver_stock');
-        logEvent(`🏹 ${this.name} hat ein ${aName} erlegt! Er trägt das Fleisch (${meat} Vorrat) ins Lager.`);
-        return;
-      }
-    } else if (this.state === 'digging') {
-      const gx = Math.round(this.x);
-      const gy = Math.round(this.y);
-      const t = map[gy] && map[gy][gx];
-      if (t) {
-        t.roots = Math.max(0, (t.roots || 1) - 1);
-      }
-      this.carried = '🥔 Wurzelknollen';
-      this.setMoveTarget(map, CAMP_CENTER.x, CAMP_CENTER.y, 'deliver_stock');
-      logEvent(`🥔 ${this.name} hat nahrhafte Wurzelknollen ausgegraben.`);
-      return;
-    } else if (this.state === 'fishing') {
-      const gx = Math.round(this.x);
-      const gy = Math.round(this.y);
-      const neighbors = [
-        map[gy - 1] && map[gy - 1][gx],
-        map[gy + 1] && map[gy + 1][gx],
-        map[gy] && map[gy][gx - 1],
-        map[gy] && map[gy][gx + 1]
-      ];
-      const wTile = neighbors.find(n => n && n.type === 'water' && (n.fishStock === undefined || n.fishStock > 0));
-      if (wTile && typeof wTile.fishStock === 'number') {
-        wTile.fishStock = Math.max(0, wTile.fishStock - 1);
-        if (wTile.fishStock === 0) {
-          logEvent(`🐟 ${this.name} hat den letzten Fisch an dieser Stelle erbeutet! (Überfischt)`);
-        } else {
-          logEvent(`🐟 ${this.name} hat am Flussufer einen Fisch erbeutet!`);
-        }
-      } else {
-        logEvent(`🐟 ${this.name} hat am Flussufer einen Fisch erbeutet!`);
-      }
-      this.carried = '🐟 Flussfisch';
-      this.setMoveTarget(map, CAMP_CENTER.x, CAMP_CENTER.y, 'deliver_stock');
-      return;
-    } else if (this.state === 'relieving') {
-      this.needs.bladder = 0;
-      const gx = Math.round(this.x);
-      const gy = Math.round(this.y);
-      if (map[gy] && map[gy][gx]) {
-        map[gy][gx].poop = { timer: 30.0, seed: true };
-        logEvent(`💩 ${this.name} hat sich am Rand erleichtert.`);
-      }
-    } else if (this.state === 'drinking') {
-      this.needs.water = 100;
-    } else if (this.state === 'foraging') {
-      this.needs.food = 100;
-    } else if (this.state === 'mining') {
-      const gx = Math.round(this.x);
-      const gy = Math.round(this.y);
-      const t = map[gy] && map[gy][gx];
-      if (t && t.type === 'rock') {
-        if (typeof t.stoneStock !== 'number') {
-          t.stoneStock = 8;
-          t.maxStoneStock = 8;
-        }
-        t.stoneStock--;
-        if (t.stoneStock <= 0) {
-          t.type = 'grass';
-          t.stoneStock = 0;
-          logEvent(`🪨 Ein Felsen bei [${gx}, ${gy}] ist durch steten Abbau zu Schotter abgetragen.`);
-        }
-      }
-      this.carried = '🪨 Stein';
-      this.setMoveTarget(map, CAMP_CENTER.x, CAMP_CENTER.y, 'deliver_stock');
-      return;
-    } else if (this.state === 'chopping') {
-      const gx = Math.round(this.x);
-      const gy = Math.round(this.y);
-      const t = map[gy] && map[gy][gx];
-      if (t && t.plant && t.plant.type === 'tree') {
-        t.plant.woodStock--;
-        if (t.plant.woodStock <= 0) {
-          // 45% Chance auf Stockausschlag / natürlicher Neuaustrieb am Wurzelstock
-          if (Math.random() < 0.45) {
-            t.plant = {
-              type: 'tree',
-              stage: 1,
-              growthTimer: 0,
-              woodStock: 3,
-              seedVariance: Math.random(),
-              maxAge: 900 + Math.random() * 600,
-              ageTimer: 0
-            };
-            logEvent(`🌱 Baumstumpf treibt neu aus (Stockausschlag) bei [${gx}, ${gy}].`);
-          } else {
-            t.plant = null;
-          }
-        }
-      }
-      this.carried = '🪵 Holz';
-      this.setMoveTarget(map, CAMP_CENTER.x, CAMP_CENTER.y, 'deliver_stock');
-      return;
-    } else if (this.state === 'building') {
-      campfireStock.stone = Math.max(0, campfireStock.stone - 1);
-      campfireStock.wood = Math.max(0, campfireStock.wood - 2);
-      const gx = Math.round(this.x);
-      const gy = Math.round(this.y);
-      if (map[gy] && map[gy][gx]) {
-        map[gy][gx].type = 'shelter';
-        map[gy][gx].plant = null;
-        map[gy][gx].shelter = { condition: 100, capacity: SHELTER_CONFIG.capacity };
-      }
-      this.utilityContributed += 40;
-      logEvent(`⛺ Schutzhütte errichtet (Platz für 2)!`);
-    } else if (this.state === 'repairing') {
-      if (campfireStock.wood > 0) campfireStock.wood--;
-      const gx = Math.round(this.x);
-      const gy = Math.round(this.y);
-      if (map[gy] && map[gy][gx] && map[gy][gx].type === 'shelter') {
-        if (!map[gy][gx].shelter) map[gy][gx].shelter = { condition: 100, capacity: SHELTER_CONFIG.capacity };
-        else map[gy][gx].shelter.condition = 100;
-        this.utilityContributed += 20;
-        logEvent(`🔨 ${this.name} hat die Schutzhütte ausgebessert und gewartet.`);
-      }
-    } else if (this.state === 'mating') {
-      this.needs.libido = 0;
-      if (this.gender === 'f') {
-        this.pregnancyTimer = 14.0;
-        logEvent(`❤️ ${this.name} erwartet Nachwuchs.`);
-      } else if (this.mateTarget) {
-        this.mateTarget.needs.libido = 0;
-        this.mateTarget.pregnancyTimer = 14.0;
-      }
-    } else if (this.state === 'playing') {
-      this.needs.energy = Math.min(100, this.needs.energy + 10);
-    } else if (this.state === 'socializing') {
-      this.needs.energy = Math.min(100, this.needs.energy + 12);
-      this.utilityContributed += 2;
-    }
-    this.state = 'idle';
-  }
-
-  seekCampfireCircle(map, humans, logEvent) {
-    const candidates = [];
-    for (let dy = -2; dy <= 2; dy++) {
-      for (let dx = -2; dx <= 2; dx++) {
-        const d = Math.hypot(dx, dy);
-        if (d >= 1.0 && d <= 2.2) {
-          const tx = CAMP_CENTER.x + dx;
-          const ty = CAMP_CENTER.y + dy;
-          if (isTileWalkable(map, tx, ty)) {
-            const occupied = humans.some(h => h.isAlive && Math.hypot(h.x - tx, h.y - ty) < 0.6);
-            if (!occupied) {
-              candidates.push({ x: tx, y: ty });
-            }
-          }
-        }
-      }
-    }
-    if (candidates.length > 0) {
-      const chosen = candidates[Math.floor(Math.random() * candidates.length)];
-      return this.setMoveTarget(map, chosen.x, chosen.y, 'sit_campfire');
-    }
-    return false;
-  }
-
-  chatWithPeer(peer, logEvent) {
-    this.state = 'socializing';
-    this.actionIntent = 'chat';
-    this.stateTimer = 4.0 + Math.random() * 3.0;
-
-    peer.state = 'socializing';
-    peer.actionIntent = 'chat';
-    peer.stateTimer = this.stateTimer;
-    peer.path = [];
-
-    this.needs.energy = Math.min(100, this.needs.energy + 8);
-    peer.needs.energy = Math.min(100, peer.needs.energy + 8);
-
-    if (Math.random() < 0.35) {
-      logEvent(`🗣️ ${this.name} und ${peer.name} halten inne und tauschen Laute aus.`);
-    }
-  }
-
-  playWithPeer(friend, map, logEvent) {
-    const rx = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(friend.x + (Math.random() - 0.5) * 4)));
-    const ry = Math.max(1, Math.min(MAP_SIZE - 2, Math.round(friend.y + (Math.random() - 0.5) * 4)));
-    if (isTileWalkable(map, rx, ry)) {
-      this.setMoveTarget(map, rx, ry, 'play');
-      this.needs.energy = Math.min(100, this.needs.energy + 5);
-      if (Math.random() < 0.2) {
-        logEvent(`🧒 ${this.name} und ${friend.name} spielen ausgelassen Fangen im Lager.`);
-      }
-    }
-  }
-
-  wanderNearCamp(map) {
-    const rx = Math.max(1, Math.min(MAP_SIZE - 2, CAMP_CENTER.x + Math.floor((Math.random() - 0.5) * 8)));
-    const ry = Math.max(1, Math.min(MAP_SIZE - 2, CAMP_CENTER.y + Math.floor((Math.random() - 0.5) * 8)));
-    if (isTileWalkable(map, rx, ry)) {
-      this.setMoveTarget(map, rx, ry, 'explore');
-    }
-  }
-
-  giveBirth(humans, logEvent) {
-    // Fisherian Sex Ratio: Ausgleichende Geburtenrate zur Vermeidung von Geschlechter-Extremen
-    const living = humans.filter(h => h.isAlive);
-    const mCount = living.filter(h => h.gender === 'm').length;
-    const fCount = living.filter(h => h.gender === 'f').length;
-
-    let boyChance = 0.5;
-    if (mCount < fCount) boyChance = 0.65;
-    else if (fCount < mCount) boyChance = 0.35;
-
-    const babyGender = Math.random() < boyChance ? 'm' : 'f';
-    const pool = babyGender === 'm' ? MALE_NAMES : FEMALE_NAMES;
-    const babyName = pool[Math.floor(Math.random() * pool.length)];
-    const babyTint = babyGender === 'm' ? '#ea580c' : '#0ea5e9';
-
-    // Natürlicher Geburtenabstand (Laktationspause)
-    this.nursingTimer = 50.0;
-
-    const baby = new Human(nextId++, babyName, babyGender, 'Säugling / Tragling', this.x + 0.1, this.y + 0.1, babyTint, 0.0);
-    baby.motherId = this.id;
-    humans.push(baby);
-    logEvent(`👶 Geburt! ${babyGender === 'm' ? 'Junge' : 'Mädchen'} ${babyName} wird von Mutter ${this.name} getragen.`);
-  }
-
-  findNearestTile(map, type) {
-    let nearest = null;
-    let minDist = 99999;
-    for (let y = 0; y < MAP_SIZE; y++) {
-      for (let x = 0; x < MAP_SIZE; x++) {
-        if (map[y][x].type === type) {
-          const d = Math.hypot(x - this.x, y - this.y);
-          if (d < minDist) {
-            minDist = d;
-            nearest = { x, y };
-          }
-        }
-      }
-    }
-    return nearest;
-  }
-
-  findNearestBushWithBerries(map) {
-    let nearest = null;
-    let minDist = 99999;
-    for (let y = 0; y < MAP_SIZE; y++) {
-      for (let x = 0; x < MAP_SIZE; x++) {
-        const p = map[y][x].plant;
-        if (p && p.type === 'bush' && p.berries > 0) {
-          const d = Math.hypot(x - this.x, y - this.y);
-          if (d < minDist) {
-            minDist = d;
-            nearest = { x, y };
-          }
-        }
-      }
-    }
-    return nearest;
-  }
-
-  findNearestAdultTree(map) {
-    let nearest = null;
-    let minDist = 99999;
-    for (let y = 0; y < MAP_SIZE; y++) {
-      for (let x = 0; x < MAP_SIZE; x++) {
-        const p = map[y][x].plant;
-        if (p && p.type === 'tree' && p.stage >= 2) {
-          const d = Math.hypot(x - this.x, y - this.y);
-          if (d < minDist) {
-            minDist = d;
-            nearest = { x, y };
-          }
-        }
-      }
-    }
-    return nearest;
-  }
-
-  isNearLitFire(map) {
-    // Prüfen, ob der Hominide im Wärmeradius (4.5 Kacheln) eines brennenden Feuers steht
-    for (let y = 0; y < MAP_SIZE; y++) {
-      for (let x = 0; x < MAP_SIZE; x++) {
-        const t = map[y][x];
-        if (t.type === 'fire') {
-          const intensity = t.fire ? t.fire.intensity : (x === CAMP_CENTER.x && y === CAMP_CENTER.y ? fireState.intensity : 100);
-          if (intensity > 15) {
-            const d = Math.hypot(x - this.x, y - this.y);
-            if (d <= 4.5) return true;
-          }
-        }
-      }
-    }
-    return false;
-  }
-
-  findNearestLitFire(map) {
-    let nearest = null;
-    let minDist = 99999;
-    for (let y = 0; y < MAP_SIZE; y++) {
-      for (let x = 0; x < MAP_SIZE; x++) {
-        const t = map[y][x];
-        if (t.type === 'fire') {
-          const intensity = t.fire ? t.fire.intensity : (x === CAMP_CENTER.x && y === CAMP_CENTER.y ? fireState.intensity : 100);
-          if (intensity > 15) {
-            const d = Math.hypot(x - this.x, y - this.y);
-            if (d < minDist) {
-              minDist = d;
-              nearest = { x, y };
-            }
-          }
-        }
-      }
-    }
-    return nearest;
-  }
-
-  findFreeShelterSpot(map, humans = []) {
-    // Sucht einen ebenen Platz im Umkreis des Lagers (Radius 1 bis 4)
-    for (let r = 1; r <= 4; r++) {
-      for (let dy = -r; dy <= r; dy++) {
-        for (let dx = -r; dx <= r; dx++) {
-          if (Math.abs(dx) === r || Math.abs(dy) === r) {
-            const sx = CAMP_CENTER.x + dx;
-            const sy = CAMP_CENTER.y + dy;
-            if (sx >= 1 && sx < MAP_SIZE - 1 && sy >= 1 && sy < MAP_SIZE - 1) {
-              const t = map[sy][sx];
-              // Freies Grasland ohne Bauten, Pflanzen oder Felsen
-              if ((t.type === 'grass' || t.type === 'path') && !t.plant && t.type !== 'fire' && t.type !== 'shelter') {
-                const alreadyTargeted = humans.some(h => h.isAlive && h.actionIntent === 'build_shelter' && Math.round(h.targetX) === sx && Math.round(h.targetY) === sy);
-                if (!alreadyTargeted) {
-                  return { x: sx, y: sy };
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-    return null;
-  }
 }
+
+Object.assign(
+  Human.prototype,
+  humanTaskMethods,
+  humanActionMethods,
+  humanSocialMethods
+);
 
 // Zuzug fremder Hominiden (Genfluss & demografischer Ausgleich)
 // Zieht gezielt das fehlende Geschlecht an, um Männchen-/Weibchen-Überschuss auszugleichen
@@ -1369,7 +582,7 @@ export function maybeSpawnForeignWanderer(humans, logEvent, map = null) {
   const role = spawnGender === 'm' ? 'Wanderer (Neuer Jäger)' : 'Wanderin (Neue DNA)';
   const tint = spawnGender === 'm' ? '#d97706' : '#10b981';
 
-  const wanderer = new Human(nextId++, name, spawnGender, role, edgeX, edgeY, tint, 18 + Math.floor(Math.random() * 5));
+  const wanderer = new Human(allocNextHumanId(), name, spawnGender, role, edgeX, edgeY, tint, 18 + Math.floor(Math.random() * 5));
   humans.push(wanderer);
   logEvent(`🚶 ${spawnGender === 'm' ? 'Ein wandernder Jäger' : 'Eine wandernde Sammlerin'} (${name}, ${Math.floor(wanderer.ageYears)} J.) schließt sich dem Klan an!`);
 }
@@ -1378,7 +591,7 @@ export function createInitialHumans() {
   return [
     new Human(1, 'Einar', 'm', 'Jäger / Steinklopfer', CAMP_CENTER.x - 1, CAMP_CENTER.y - 1, '#d97706', 22),
     new Human(2, 'Halla', 'f', 'Sammlerin & Hüterin', CAMP_CENTER.x, CAMP_CENTER.y + 1, '#0284c7', 20),
-    new Human(3, 'Bruder Mohan', 'm', 'Sadhu / Ältester', CAMP_CENTER.x + 1, CAMP_CENTER.y, '#7c3aed', 50),
+    new Human(3, 'Bruder Mohan', 'm', 'Ältester / Feuerhüter', CAMP_CENTER.x + 1, CAMP_CENTER.y, '#7c3aed', 38),
     new Human(4, 'Sula', 'f', 'Junge Sammlerin', CAMP_CENTER.x - 1, CAMP_CENTER.y + 1, '#10b981', 18)
   ];
 }
