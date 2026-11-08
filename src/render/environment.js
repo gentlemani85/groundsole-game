@@ -1,7 +1,7 @@
 // =========================================================================
 // ENVIRONMENT RENDERING (Landschaft, Wasser, Pflanzen, Felsen, Hütten, Feuer)
 // =========================================================================
-import { TILE_W, TILE_H, CAMP_CENTER, fireState, seasonState } from '../config.js';
+import { TILE_W, TILE_H, CAMP_CENTER, fireState, seasonState, MAP_SIZE } from '../config.js';
 
 // Stufenlose 4-Jahreszeiten-Farbmischung (verhindert jegliche harte Farbsprünge)
 function blend4RGB(cSpring, cSummer, cAutumn, cWinter, w) {
@@ -114,30 +114,37 @@ export const environmentRenderMethods = {
     ctx.fillStyle = fillColor;
     ctx.fill();
 
-    // Hauchzarte, organische Kachelkante
-    ctx.strokeStyle = (tile.type === 'water') ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.06)';
-    ctx.lineWidth = 0.8 * zoom;
+    // Nahtloser Kachelübergang ohne sichtbare Rasterlinien (Farbidentischer Kantenabschluss gegen Subpixel-Lücken)
+    ctx.strokeStyle = fillColor;
+    ctx.lineWidth = 0.6;
     ctx.stroke();
 
-    // 3D-Kachelsockel nach unten
-    const depth = 5 * zoom;
-    ctx.beginPath();
-    ctx.moveTo(pos.x - tw / 2, cy);
-    ctx.lineTo(pos.x, pos.y + th);
-    ctx.lineTo(pos.x, pos.y + th + depth);
-    ctx.lineTo(pos.x - tw / 2, cy + depth);
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(0,0,0,0.18)';
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.moveTo(pos.x, pos.y + th);
-    ctx.lineTo(pos.x + tw / 2, cy);
-    ctx.lineTo(pos.x + tw / 2, cy + depth);
-    ctx.lineTo(pos.x, pos.y + th + depth);
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(0,0,0,0.28)';
-    ctx.fill();
+    // 3D-Kachelsockel nach unten (nur an den beiden sichtbaren Außenkanten der schwebenden Insel)
+    const isSouthWestEdge = (gy === MAP_SIZE - 1);
+    const isSouthEastEdge = (gx === MAP_SIZE - 1);
+    if (isSouthWestEdge || isSouthEastEdge) {
+      const depth = 5 * zoom;
+      if (isSouthWestEdge) {
+        ctx.beginPath();
+        ctx.moveTo(pos.x - tw / 2, cy);
+        ctx.lineTo(pos.x, pos.y + th);
+        ctx.lineTo(pos.x, pos.y + th + depth);
+        ctx.lineTo(pos.x - tw / 2, cy + depth);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(0,0,0,0.18)';
+        ctx.fill();
+      }
+      if (isSouthEastEdge) {
+        ctx.beginPath();
+        ctx.moveTo(pos.x, pos.y + th);
+        ctx.lineTo(pos.x + tw / 2, cy);
+        ctx.lineTo(pos.x + tw / 2, cy + depth);
+        ctx.lineTo(pos.x, pos.y + th + depth);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(0,0,0,0.28)';
+        ctx.fill();
+      }
+    }
 
     // Wasserwellen
     if (tile.type === 'water') {

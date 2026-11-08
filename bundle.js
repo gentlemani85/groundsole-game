@@ -712,26 +712,34 @@
       }
       ctx2.fillStyle = fillColor;
       ctx2.fill();
-      ctx2.strokeStyle = tile.type === "water" ? "rgba(255, 255, 255, 0.12)" : "rgba(0, 0, 0, 0.06)";
-      ctx2.lineWidth = 0.8 * zoom;
+      ctx2.strokeStyle = fillColor;
+      ctx2.lineWidth = 0.6;
       ctx2.stroke();
-      const depth = 5 * zoom;
-      ctx2.beginPath();
-      ctx2.moveTo(pos.x - tw / 2, cy);
-      ctx2.lineTo(pos.x, pos.y + th);
-      ctx2.lineTo(pos.x, pos.y + th + depth);
-      ctx2.lineTo(pos.x - tw / 2, cy + depth);
-      ctx2.closePath();
-      ctx2.fillStyle = "rgba(0,0,0,0.18)";
-      ctx2.fill();
-      ctx2.beginPath();
-      ctx2.moveTo(pos.x, pos.y + th);
-      ctx2.lineTo(pos.x + tw / 2, cy);
-      ctx2.lineTo(pos.x + tw / 2, cy + depth);
-      ctx2.lineTo(pos.x, pos.y + th + depth);
-      ctx2.closePath();
-      ctx2.fillStyle = "rgba(0,0,0,0.28)";
-      ctx2.fill();
+      const isSouthWestEdge = gy === MAP_SIZE - 1;
+      const isSouthEastEdge = gx === MAP_SIZE - 1;
+      if (isSouthWestEdge || isSouthEastEdge) {
+        const depth = 5 * zoom;
+        if (isSouthWestEdge) {
+          ctx2.beginPath();
+          ctx2.moveTo(pos.x - tw / 2, cy);
+          ctx2.lineTo(pos.x, pos.y + th);
+          ctx2.lineTo(pos.x, pos.y + th + depth);
+          ctx2.lineTo(pos.x - tw / 2, cy + depth);
+          ctx2.closePath();
+          ctx2.fillStyle = "rgba(0,0,0,0.18)";
+          ctx2.fill();
+        }
+        if (isSouthEastEdge) {
+          ctx2.beginPath();
+          ctx2.moveTo(pos.x, pos.y + th);
+          ctx2.lineTo(pos.x + tw / 2, cy);
+          ctx2.lineTo(pos.x + tw / 2, cy + depth);
+          ctx2.lineTo(pos.x, pos.y + th + depth);
+          ctx2.closePath();
+          ctx2.fillStyle = "rgba(0,0,0,0.28)";
+          ctx2.fill();
+        }
+      }
       if (tile.type === "water") {
         this.drawWaterWaves(cx, cy);
       }
