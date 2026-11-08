@@ -1,7 +1,7 @@
 // =========================================================================
 // HUMAN ACTIONS (Ankunfts-Auslösung onArrived & Abschluss-Logik finishAction)
 // =========================================================================
-import { campfireStock, fireState, CAMP_CENTER, SHELTER_CONFIG } from '../config.js';
+import { campfireStock, fireState, CAMP_CENTER, SHELTER_CONFIG, SECONDS_PER_YEAR } from '../config.js';
 import { spookWildlife } from '../wildlife.js';
 
 export const humanActionMethods = {
@@ -279,18 +279,12 @@ export const humanActionMethods = {
       if (t && t.plant && t.plant.type === 'tree') {
         t.plant.woodStock--;
         if (t.plant.woodStock <= 0) {
-          // Im Altpaläolithikum wurden mit Faustkeilen Äste & Stangenholz geerntet (Niederwald / Stockausschlag):
-          // Der Wurzelstock bleibt als kleiner Schössling (Stufe 1) erhalten und wächst über die Jahreszeiten nach.
-          t.plant = {
-            type: 'tree',
-            stage: 1,
-            growthTimer: 0,
-            woodStock: 3,
-            seedVariance: t.plant.seedVariance || Math.random(),
-            maxAge: 3600 + Math.random() * 2400,
-            ageTimer: 0
-          };
-          logEvent(`🌱 Baum bei [${gx}, ${gy}] wurde abgeerntet und treibt am Wurzelstock neu aus.`);
+          // Option A: Übernutzter Baum stirbt ab und hinterlässt einen sichtbaren toten Baumstumpf,
+          // der über Zeit verwittert (kein plötzliches Verschwinden ins Nichts).
+          t.plant.isStump = true;
+          t.plant.stumpTimer = 180.0;
+          t.plant.maxStumpTimer = 180.0;
+          logEvent(`🪵 Baum bei [${gx}, ${gy}] ist komplett abgeerntet – ein toter Baumstumpf bleibt zurück.`);
         }
       }
       this.carried = '🪵 Holz';
@@ -320,12 +314,14 @@ export const humanActionMethods = {
       }
     } else if (this.state === 'mating') {
       this.needs.libido = 0;
+      // Realistische Schwangerschaftsdauer: 9 Monate = 0,75 Jahre (3 Jahreszeiten = 360s bei 1x)
+      const gestationSec = SECONDS_PER_YEAR * 0.75;
       if (this.gender === 'f') {
-        this.pregnancyTimer = 14.0;
+        this.pregnancyTimer = gestationSec;
         logEvent(`❤️ ${this.name} erwartet Nachwuchs.`);
       } else if (this.mateTarget) {
         this.mateTarget.needs.libido = 0;
-        this.mateTarget.pregnancyTimer = 14.0;
+        this.mateTarget.pregnancyTimer = gestationSec;
       }
     } else if (this.state === 'playing') {
       this.needs.energy = Math.min(100, this.needs.energy + 10);

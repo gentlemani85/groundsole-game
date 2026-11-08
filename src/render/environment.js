@@ -390,6 +390,51 @@ export const environmentRenderMethods = {
     const seed = plant.seedVariance || 0.5;
 
     ctx.save();
+    const w = seasonState.weights || { spring: 1, summer: 0, autumn: 0, winter: 0 };
+
+    // Toter Baumstumpf (Option A: nach kompletter Entästung oder Alterstod)
+    if (plant.isStump) {
+      const rem = typeof plant.stumpTimer === 'number' ? plant.stumpTimer : 180;
+      const fadeAlpha = Math.min(1, rem / 30); // verblasst in den letzten 30s sanft in den Humus
+      ctx.globalAlpha = fadeAlpha;
+
+      const sw = 4.8 * zoom;
+      const sh = 6.5 * zoom;
+
+      // Bodenschatten
+      ctx.beginPath();
+      ctx.ellipse(cx + 1 * zoom, cy + 1.5 * zoom, sw * 1.35, sw * 0.65, 0, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0,0,0,0.24)';
+      ctx.fill();
+
+      // Wurzelansatz & Rinde des Stumpfs
+      ctx.fillStyle = '#3e2714';
+      ctx.beginPath();
+      ctx.moveTo(cx - sw * 1.15, cy + 1 * zoom);
+      ctx.lineTo(cx - sw * 0.78, cy - sh);
+      ctx.lineTo(cx + sw * 0.78, cy - sh + 0.8 * zoom);
+      ctx.lineTo(cx + sw * 1.15, cy + 1 * zoom);
+      ctx.closePath();
+      ctx.fill();
+
+      // Abgebrochener kleiner Seitenast am Stumpf
+      ctx.strokeStyle = '#3e2714';
+      ctx.lineWidth = 1.4 * zoom;
+      ctx.beginPath();
+      ctx.moveTo(cx + sw * 0.5, cy - sh * 0.5);
+      ctx.lineTo(cx + sw * 1.25, cy - sh * 0.85);
+      ctx.stroke();
+
+      // Helle Holz-Bruchfläche oben (im Winter mit kleiner Schneekappe)
+      ctx.fillStyle = blend4RGB([182, 146, 102], [182, 146, 102], [168, 132, 90], [238, 244, 250], w);
+      ctx.beginPath();
+      ctx.ellipse(cx, cy - sh + 0.4 * zoom, sw * 0.78, sw * 0.38, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+      return;
+    }
+
     // 3 Wuchsformen nach Seed:
     // Typ 1: Ausladende Fluss-Eiche (breiter, niedriger)
     // Typ 2: Schlanke Steppen-Kiefer (hoher Stamm, konische Krone)
@@ -397,9 +442,11 @@ export const environmentRenderMethods = {
     const isPine = (seed >= 0.35 && seed < 0.70);
     const isOak = (seed < 0.35);
 
+    const woodRatio = typeof plant.woodStock === 'number' ? Math.max(0.25, Math.min(1, plant.woodStock / 4)) : 1.0;
+    const crownScale = 0.78 + woodRatio * 0.22; // Krone wird etwas lichter, wenn Äste geerntet wurden
     const trunkH = ((isPine ? 11 : (isOak ? 7 : 8)) + s * 9) * zoom;
     const trunkW = (2 + s * 1.5) * zoom;
-    const crownR = ((isOak ? 6.5 : (isPine ? 4.8 : 5.5)) + s * 5.5) * zoom;
+    const crownR = ((isOak ? 6.5 : (isPine ? 4.8 : 5.5)) + s * 5.5) * crownScale * zoom;
     const lean = (seed - 0.5) * 5 * zoom; // Natürliche Stammneigung
 
     ctx.beginPath();
@@ -425,8 +472,6 @@ export const environmentRenderMethods = {
 
     const crownX = cx + lean;
     const crownY = cy - trunkH - crownR * 0.35;
-
-    const w = seasonState.weights || { spring: 1, summer: 0, autumn: 0, winter: 0 };
 
     if (isPine) {
       // Schlanke Kiefern-/Nadelbaum-Form (etagenförmig)

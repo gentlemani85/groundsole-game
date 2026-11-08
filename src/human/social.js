@@ -1,7 +1,7 @@
 // =========================================================================
 // HUMAN SOCIAL & DEMOGRAPHICS (Lagerfeuer-Kreis, Peer-Play, Geburt & Zuzug)
 // =========================================================================
-import { MAP_SIZE, CAMP_CENTER } from '../config.js';
+import { MAP_SIZE, CAMP_CENTER, SECONDS_PER_YEAR } from '../config.js';
 import { isTileWalkable } from '../pathfinding.js';
 
 let nextId = 4;
@@ -90,8 +90,8 @@ export const humanSocialMethods = {
     const babyName = pool[Math.floor(Math.random() * pool.length)];
     const babyTint = babyGender === 'm' ? '#ea580c' : '#0ea5e9';
 
-    // Natürlicher Geburtenabstand (Laktationspause)
-    this.nursingTimer = 50.0;
+    // Natürlicher Geburtenabstand (Laktationspause gekoppelt an Jahresdauer)
+    this.nursingTimer = SECONDS_PER_YEAR * 1.0;
 
     const HumanClass = this.constructor;
     const baby = new HumanClass(allocNextHumanId(), babyName, babyGender, 'Säugling / Tragling', this.x + 0.1, this.y + 0.1, babyTint, 0.0);

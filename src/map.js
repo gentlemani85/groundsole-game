@@ -506,13 +506,40 @@ export function updateEcology(map, dtSec, logEvent) {
 
       if (tile.plant) {
         const p = tile.plant;
+
+        // Verwitterung toter Baumstümpfe (Option A: sichtbarer Stumpf verrottet langsam zu Humus)
+        if (p.isStump) {
+          p.stumpTimer = (p.stumpTimer || 180) - dtSec;
+          if (p.stumpTimer <= 0) {
+            tile.npk = Math.min(100, tile.npk + 30);
+            const seed = p.seedVariance || 0.5;
+            const isPine = (seed >= 0.35 && seed < 0.70);
+            // Nadelbäume treiben nie aus dem Stumpf aus; bei Laubbäumen keimt selten (20%) ein neuer Schössling
+            if (!isPine && Math.random() < 0.20) {
+              tile.plant = {
+                type: 'tree',
+                stage: 1,
+                growthTimer: 0,
+                woodStock: 3,
+                seedVariance: Math.random(),
+                maxAge: 3600 + Math.random() * 2400,
+                ageTimer: 0
+              };
+              logEvent(`🌱 Neben einem vermoderten Laubbaum-Stumpf bei [${x}, ${y}] sprießt ein junger Keimling.`);
+            } else {
+              tile.plant = null;
+            }
+          }
+          continue;
+        }
+
         const seasonGrowthMod = seasonState.isWinter ? 0 : (seasonState.isSpring || seasonState.isSummer ? 1.2 : 0.85);
         const growthRate = (tile.npk / 40) * seasonGrowthMod;
 
         // Alterung & Wurzelstock-Regeneration
         if (p.stage === 3) {
           p.ageTimer = (p.ageTimer || 0) + dtSec;
-          const maxAge = p.maxAge || (p.type === 'bush' ? 800 : 1200);
+          const maxAge = p.maxAge || (p.type === 'bush' ? 800 : 3600);
           if (p.ageTimer >= maxAge) {
             if (p.type === 'bush') {
               p.stage = 1;
@@ -523,15 +550,11 @@ export function updateEcology(map, dtSec, logEvent) {
               logEvent(`🌱 Ein alter Beerenstrauch bei [${x}, ${y}] zieht sich in den schlafenden Wurzelstock zurück.`);
               continue;
             } else {
-              // Baum fällt nicht lautlos ins Nichts, sondern verjüngt sich als kleiner Schössling (Stufe 1)
-              const compostNPK = 30;
-              tile.npk = Math.min(100, tile.npk + compostNPK);
-              p.stage = 1;
-              p.woodStock = 3;
-              p.ageTimer = 0;
-              p.growthTimer = 0;
-              p.maxAge = 3600 + Math.random() * 2400;
-              logEvent(`🌱 Ein uralter Baum bei [${x}, ${y}] gibt seine Nährstoffe frei – am Wurzelstock wächst ein neuer Schössling.`);
+              // Uralter Baum stirbt ab und hinterlässt zunächst einen sichtbaren Totholz-Stumpf
+              p.isStump = true;
+              p.stumpTimer = 180.0;
+              p.maxStumpTimer = 180.0;
+              logEvent(`🪵 Ein uralter Baum bei [${x}, ${y}] ist abgestorben und als Totholz-Stumpf zurückgeblieben.`);
               continue;
             }
           }

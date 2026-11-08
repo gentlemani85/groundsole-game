@@ -144,7 +144,7 @@ export function findNearestAdultTree(map, fromX, fromY) {
   for (let y = 0; y < MAP_SIZE; y++) {
     for (let x = 0; x < MAP_SIZE; x++) {
       const p = map[y][x].plant;
-      if (p && p.type === 'tree' && p.stage >= 2) {
+      if (p && p.type === 'tree' && !p.isStump && p.stage >= 2 && (p.woodStock === undefined || p.woodStock > 0)) {
         const d = Math.hypot(x - fromX, y - fromY);
         if (d < minDist) {
           minDist = d;

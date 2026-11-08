@@ -68,7 +68,7 @@ export function computeEcologicalPressure(map, humans, animals, campfireStock, f
         if (t.plant) {
           if (t.plant.type === 'bush' && !t.plant.isRootstock) {
             localBerries += (t.plant.berries || 0);
-          } else if (t.plant.type === 'tree' && t.plant.stage === 3) {
+          } else if (t.plant.type === 'tree' && !t.plant.isStump && t.plant.stage === 3) {
             localTrees++;
           }
         }

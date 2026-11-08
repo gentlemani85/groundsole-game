@@ -551,11 +551,34 @@
         }
         if (tile.plant) {
           const p = tile.plant;
+          if (p.isStump) {
+            p.stumpTimer = (p.stumpTimer || 180) - dtSec;
+            if (p.stumpTimer <= 0) {
+              tile.npk = Math.min(100, tile.npk + 30);
+              const seed = p.seedVariance || 0.5;
+              const isPine = seed >= 0.35 && seed < 0.7;
+              if (!isPine && Math.random() < 0.2) {
+                tile.plant = {
+                  type: "tree",
+                  stage: 1,
+                  growthTimer: 0,
+                  woodStock: 3,
+                  seedVariance: Math.random(),
+                  maxAge: 3600 + Math.random() * 2400,
+                  ageTimer: 0
+                };
+                logEvent2(`\u{1F331} Neben einem vermoderten Laubbaum-Stumpf bei [${x}, ${y}] sprie\xDFt ein junger Keimling.`);
+              } else {
+                tile.plant = null;
+              }
+            }
+            continue;
+          }
           const seasonGrowthMod = seasonState.isWinter ? 0 : seasonState.isSpring || seasonState.isSummer ? 1.2 : 0.85;
           const growthRate = tile.npk / 40 * seasonGrowthMod;
           if (p.stage === 3) {
             p.ageTimer = (p.ageTimer || 0) + dtSec;
-            const maxAge = p.maxAge || (p.type === "bush" ? 800 : 1200);
+            const maxAge = p.maxAge || (p.type === "bush" ? 800 : 3600);
             if (p.ageTimer >= maxAge) {
               if (p.type === "bush") {
                 p.stage = 1;
@@ -566,14 +589,10 @@
                 logEvent2(`\u{1F331} Ein alter Beerenstrauch bei [${x}, ${y}] zieht sich in den schlafenden Wurzelstock zur\xFCck.`);
                 continue;
               } else {
-                const compostNPK = 30;
-                tile.npk = Math.min(100, tile.npk + compostNPK);
-                p.stage = 1;
-                p.woodStock = 3;
-                p.ageTimer = 0;
-                p.growthTimer = 0;
-                p.maxAge = 3600 + Math.random() * 2400;
-                logEvent2(`\u{1F331} Ein uralter Baum bei [${x}, ${y}] gibt seine N\xE4hrstoffe frei \u2013 am Wurzelstock w\xE4chst ein neuer Sch\xF6ssling.`);
+                p.isStump = true;
+                p.stumpTimer = 180;
+                p.maxStumpTimer = 180;
+                logEvent2(`\u{1FAB5} Ein uralter Baum bei [${x}, ${y}] ist abgestorben und als Totholz-Stumpf zur\xFCckgeblieben.`);
                 continue;
               }
             }
@@ -918,11 +937,45 @@
       const s = plant.stage;
       const seed = plant.seedVariance || 0.5;
       ctx2.save();
+      const w = seasonState.weights || { spring: 1, summer: 0, autumn: 0, winter: 0 };
+      if (plant.isStump) {
+        const rem = typeof plant.stumpTimer === "number" ? plant.stumpTimer : 180;
+        const fadeAlpha = Math.min(1, rem / 30);
+        ctx2.globalAlpha = fadeAlpha;
+        const sw = 4.8 * zoom;
+        const sh = 6.5 * zoom;
+        ctx2.beginPath();
+        ctx2.ellipse(cx + 1 * zoom, cy + 1.5 * zoom, sw * 1.35, sw * 0.65, 0, 0, Math.PI * 2);
+        ctx2.fillStyle = "rgba(0,0,0,0.24)";
+        ctx2.fill();
+        ctx2.fillStyle = "#3e2714";
+        ctx2.beginPath();
+        ctx2.moveTo(cx - sw * 1.15, cy + 1 * zoom);
+        ctx2.lineTo(cx - sw * 0.78, cy - sh);
+        ctx2.lineTo(cx + sw * 0.78, cy - sh + 0.8 * zoom);
+        ctx2.lineTo(cx + sw * 1.15, cy + 1 * zoom);
+        ctx2.closePath();
+        ctx2.fill();
+        ctx2.strokeStyle = "#3e2714";
+        ctx2.lineWidth = 1.4 * zoom;
+        ctx2.beginPath();
+        ctx2.moveTo(cx + sw * 0.5, cy - sh * 0.5);
+        ctx2.lineTo(cx + sw * 1.25, cy - sh * 0.85);
+        ctx2.stroke();
+        ctx2.fillStyle = blend4RGB([182, 146, 102], [182, 146, 102], [168, 132, 90], [238, 244, 250], w);
+        ctx2.beginPath();
+        ctx2.ellipse(cx, cy - sh + 0.4 * zoom, sw * 0.78, sw * 0.38, 0, 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.restore();
+        return;
+      }
       const isPine = seed >= 0.35 && seed < 0.7;
       const isOak = seed < 0.35;
+      const woodRatio = typeof plant.woodStock === "number" ? Math.max(0.25, Math.min(1, plant.woodStock / 4)) : 1;
+      const crownScale = 0.78 + woodRatio * 0.22;
       const trunkH = ((isPine ? 11 : isOak ? 7 : 8) + s * 9) * zoom;
       const trunkW = (2 + s * 1.5) * zoom;
-      const crownR = ((isOak ? 6.5 : isPine ? 4.8 : 5.5) + s * 5.5) * zoom;
+      const crownR = ((isOak ? 6.5 : isPine ? 4.8 : 5.5) + s * 5.5) * crownScale * zoom;
       const lean = (seed - 0.5) * 5 * zoom;
       ctx2.beginPath();
       ctx2.ellipse(cx + 2 * zoom, cy + 2 * zoom, crownR * 1.15, crownR * 0.5, -0.2, 0, Math.PI * 2);
@@ -943,7 +996,6 @@
       ctx2.stroke();
       const crownX = cx + lean;
       const crownY = cy - trunkH - crownR * 0.35;
-      const w = seasonState.weights || { spring: 1, summer: 0, autumn: 0, winter: 0 };
       if (isPine) {
         ctx2.fillStyle = "#102a16";
         ctx2.beginPath();
@@ -1971,7 +2023,7 @@
     for (let y = 0; y < MAP_SIZE; y++) {
       for (let x = 0; x < MAP_SIZE; x++) {
         const p = map2[y][x].plant;
-        if (p && p.type === "tree" && p.stage >= 2) {
+        if (p && p.type === "tree" && !p.isStump && p.stage >= 2 && (p.woodStock === void 0 || p.woodStock > 0)) {
           const d = Math.hypot(x - fromX, y - fromY);
           if (d < minDist) {
             minDist = d;
@@ -2827,16 +2879,10 @@
         if (t && t.plant && t.plant.type === "tree") {
           t.plant.woodStock--;
           if (t.plant.woodStock <= 0) {
-            t.plant = {
-              type: "tree",
-              stage: 1,
-              growthTimer: 0,
-              woodStock: 3,
-              seedVariance: t.plant.seedVariance || Math.random(),
-              maxAge: 3600 + Math.random() * 2400,
-              ageTimer: 0
-            };
-            logEvent2(`\u{1F331} Baum bei [${gx}, ${gy}] wurde abgeerntet und treibt am Wurzelstock neu aus.`);
+            t.plant.isStump = true;
+            t.plant.stumpTimer = 180;
+            t.plant.maxStumpTimer = 180;
+            logEvent2(`\u{1FAB5} Baum bei [${gx}, ${gy}] ist komplett abgeerntet \u2013 ein toter Baumstumpf bleibt zur\xFCck.`);
           }
         }
         this.carried = "\u{1FAB5} Holz";
@@ -2866,12 +2912,13 @@
         }
       } else if (this.state === "mating") {
         this.needs.libido = 0;
+        const gestationSec = SECONDS_PER_YEAR * 0.75;
         if (this.gender === "f") {
-          this.pregnancyTimer = 14;
+          this.pregnancyTimer = gestationSec;
           logEvent2(`\u2764\uFE0F ${this.name} erwartet Nachwuchs.`);
         } else if (this.mateTarget) {
           this.mateTarget.needs.libido = 0;
-          this.mateTarget.pregnancyTimer = 14;
+          this.mateTarget.pregnancyTimer = gestationSec;
         }
       } else if (this.state === "playing") {
         this.needs.energy = Math.min(100, this.needs.energy + 10);
@@ -2986,7 +3033,7 @@
       const pool = babyGender === "m" ? MALE_NAMES : FEMALE_NAMES;
       const babyName = pool[Math.floor(Math.random() * pool.length)];
       const babyTint = babyGender === "m" ? "#ea580c" : "#0ea5e9";
-      this.nursingTimer = 50;
+      this.nursingTimer = SECONDS_PER_YEAR * 1;
       const HumanClass = this.constructor;
       const baby = new HumanClass(allocNextHumanId(), babyName, babyGender, "S\xE4ugling / Tragling", this.x + 0.1, this.y + 0.1, babyTint, 0);
       baby.motherId = this.id;
@@ -3521,7 +3568,7 @@
           if (t.plant) {
             if (t.plant.type === "bush" && !t.plant.isRootstock) {
               localBerries += t.plant.berries || 0;
-            } else if (t.plant.type === "tree" && t.plant.stage === 3) {
+            } else if (t.plant.type === "tree" && !t.plant.isStump && t.plant.stage === 3) {
               localTrees++;
             }
           }
