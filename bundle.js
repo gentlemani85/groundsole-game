@@ -52,13 +52,16 @@
     isSpring: true,
     isSummer: false,
     isAutumn: false,
-    isWinter: false
+    isWinter: false,
+    // Kontinuierliche Interpolations-Gewichte (Summe = 1.0) für butterweiche Farbübergänge
+    weights: { spring: 1, summer: 0, autumn: 0, winter: 0 }
   };
   function advanceSeasonClock(dtSec, logEvent2 = null) {
     if (dtSec <= 0) return;
     const prevIndex = seasonState.index;
     seasonState.elapsedYears += dtSec / 50;
-    const newIndex = Math.floor(seasonState.elapsedYears % 1 * 4) % 4;
+    const yearFrac = (seasonState.elapsedYears % 1 + 1) % 1;
+    const newIndex = Math.floor(yearFrac * 4) % 4;
     seasonState.index = newIndex;
     seasonState.key = SEASONS[newIndex].key;
     seasonState.label = SEASONS[newIndex].label;
@@ -66,6 +69,16 @@
     seasonState.isSummer = newIndex === 1;
     seasonState.isAutumn = newIndex === 2;
     seasonState.isWinter = newIndex === 3;
+    const yearPos = yearFrac * 4;
+    const shifted = (yearPos - 0.5 + 4) % 4;
+    const idxA = Math.floor(shifted) % 4;
+    const idxB = (idxA + 1) % 4;
+    const rawT = shifted - Math.floor(shifted);
+    const smoothT = rawT * rawT * (3 - 2 * rawT);
+    const keys = ["spring", "summer", "autumn", "winter"];
+    seasonState.weights = { spring: 0, summer: 0, autumn: 0, winter: 0 };
+    seasonState.weights[keys[idxA]] = 1 - smoothT;
+    seasonState.weights[keys[idxB]] = smoothT;
     if (newIndex !== prevIndex && logEvent2) {
       if (newIndex === 0) {
         logEvent2("\u{1F331} Schneeschmelze im Tal! Der Fr\xFChling weckt neue Knospen und Wildblumen.");
@@ -563,6 +576,29 @@
   }
 
   // src/render/environment.js
+  function blend4RGB(cSpring, cSummer, cAutumn, cWinter, w) {
+    const r = Math.round(cSpring[0] * w.spring + cSummer[0] * w.summer + cAutumn[0] * w.autumn + cWinter[0] * w.winter);
+    const g = Math.round(cSpring[1] * w.spring + cSummer[1] * w.summer + cAutumn[1] * w.autumn + cWinter[1] * w.winter);
+    const b = Math.round(cSpring[2] * w.spring + cSummer[2] * w.summer + cAutumn[2] * w.autumn + cWinter[2] * w.winter);
+    return `rgb(${r}, ${g}, ${b})`;
+  }
+  function getLocalSeasonWeights(gx, gy) {
+    const base = seasonState.weights || { spring: 1, summer: 0, autumn: 0, winter: 0 };
+    if (base.winter <= 1e-3) return base;
+    const distToCamp = Math.hypot(gx - CAMP_CENTER.x, gy - CAMP_CENTER.y);
+    const fireFactor = Math.max(0, Math.min(1, (fireState.intensity - 15) / 85));
+    const radialMelt = Math.max(0, Math.min(1, (4.2 - distToCamp) / 2.4));
+    const meltAmount = fireFactor * radialMelt;
+    if (meltAmount <= 1e-3) return base;
+    const meltedWinter = base.winter * (1 - meltAmount);
+    const freedWeight = base.winter - meltedWinter;
+    return {
+      spring: base.spring + freedWeight * 0.35,
+      summer: base.summer,
+      autumn: base.autumn + freedWeight * 0.65,
+      winter: meltedWinter
+    };
+  }
   var environmentRenderMethods = {
     drawGround(tile, gx, gy) {
       const ctx2 = this.ctx;
@@ -579,59 +615,44 @@
       ctx2.lineTo(pos.x, pos.y + th);
       ctx2.lineTo(pos.x - tw / 2, cy);
       ctx2.closePath();
+      const w = getLocalSeasonWeights(gx, gy);
       let fillColor;
-      const distToCamp = Math.hypot(gx - CAMP_CENTER.x, gy - CAMP_CENTER.y);
-      const isMeltedByFire = fireState.intensity > 20 && distToCamp <= 3.5;
       if (tile.type === "grass") {
         const factor = Math.min(1, Math.max(0, tile.npk / 100));
-        if (seasonState.isWinter && !isMeltedByFire) {
-          const r = Math.round(224 - factor * 28);
-          const g = Math.round(232 - factor * 24);
-          const b = Math.round(242 - factor * 18);
-          fillColor = `rgb(${r}, ${g}, ${b})`;
-        } else if (seasonState.isAutumn) {
-          const r = Math.round(142 - factor * 58);
-          const g = Math.round(126 - factor * 48);
-          const b = Math.round(64 - factor * 34);
-          fillColor = `rgb(${r}, ${g}, ${b})`;
-        } else if (this.biomeId === "steppe") {
-          const r = Math.round(156 - factor * 42);
-          const g = Math.round(144 - factor * 38);
-          const b = Math.round(68 - factor * 28);
-          fillColor = `rgb(${r}, ${g}, ${b})`;
+        let cSpring, cSummer;
+        if (this.biomeId === "steppe") {
+          cSpring = [122 - factor * 38, 152 - factor * 36, 72 - factor * 28];
+          cSummer = [164 - factor * 42, 142 - factor * 38, 62 - factor * 26];
         } else if (this.biomeId === "forest") {
-          const r = Math.round(35 - factor * 18);
-          const g = Math.round(85 + factor * 22);
-          const b = Math.round(32 + factor * 8);
-          fillColor = `rgb(${r}, ${g}, ${b})`;
+          cSpring = [48 - factor * 20, 118 + factor * 18, 46 + factor * 6];
+          cSummer = [28 - factor * 14, 78 + factor * 20, 26 + factor * 8];
         } else if (this.biomeId === "karst_canyon") {
-          const r = Math.round(102 - factor * 28);
-          const g = Math.round(116 - factor * 24);
-          const b = Math.round(98 - factor * 18);
-          fillColor = `rgb(${r}, ${g}, ${b})`;
+          cSpring = [82 - factor * 26, 134 - factor * 24, 88 - factor * 18];
+          cSummer = [114 - factor * 28, 116 - factor * 24, 86 - factor * 18];
         } else {
-          const r = Math.round(124 - factor * 86);
-          const g = Math.round(142 - factor * 64);
-          const b = Math.round(86 - factor * 56);
-          fillColor = `rgb(${r}, ${g}, ${b})`;
+          cSpring = [88 - factor * 56, 162 - factor * 58, 76 - factor * 46];
+          cSummer = [138 - factor * 76, 144 - factor * 62, 62 - factor * 40];
         }
+        const cAutumn = [148 - factor * 58, 116 - factor * 48, 56 - factor * 32];
+        const cWinter = [224 - factor * 28, 232 - factor * 24, 242 - factor * 18];
+        fillColor = blend4RGB(cSpring, cSummer, cAutumn, cWinter, w);
       } else if (tile.type === "water") {
         const shimmer = Math.sin(this.waterPhase + gx * 0.8 + gy * 0.5) * 8;
-        if (seasonState.isWinter) {
-          fillColor = `rgb(${58 + shimmer}, ${118 + shimmer}, ${152 + shimmer})`;
-        } else if (this.biomeId === "karst_canyon") {
-          fillColor = `rgb(${22 + shimmer}, ${120 + shimmer}, ${136 + shimmer})`;
+        const baseW = seasonState.weights || { spring: 1, summer: 0, autumn: 0, winter: 0 };
+        let cBase;
+        if (this.biomeId === "karst_canyon") {
+          cBase = [22 + shimmer, 120 + shimmer, 136 + shimmer];
         } else if (this.biomeId === "forest") {
-          fillColor = `rgb(${24 + shimmer}, ${88 + shimmer}, ${98 + shimmer})`;
+          cBase = [24 + shimmer, 88 + shimmer, 98 + shimmer];
         } else {
-          fillColor = `rgb(${34 + shimmer}, ${105 + shimmer}, ${136 + shimmer})`;
+          cBase = [34 + shimmer, 105 + shimmer, 136 + shimmer];
         }
+        const cWinterWater = [64 + shimmer, 122 + shimmer, 156 + shimmer];
+        fillColor = blend4RGB(cBase, cBase, cBase, cWinterWater, baseW);
       } else if (tile.type === "path") {
-        if (seasonState.isWinter && !isMeltedByFire) {
-          fillColor = "#9ca3af";
-        } else {
-          fillColor = this.biomeId === "karst_canyon" ? "#767472" : this.biomeId === "steppe" ? "#a28862" : "#8a7452";
-        }
+        const cNormal = this.biomeId === "karst_canyon" ? [118, 116, 114] : this.biomeId === "steppe" ? [162, 136, 98] : [138, 116, 82];
+        const cWinterPath = [164, 172, 182];
+        fillColor = blend4RGB(cNormal, cNormal, cNormal, cWinterPath, w);
       } else if (tile.type === "fire") {
         fillColor = "#3c362d";
       } else if (tile.type === "rock") {
@@ -664,8 +685,9 @@
       if (tile.type === "water") {
         this.drawWaterWaves(cx, cy);
       }
-      if (!seasonState.isWinter && tile.type === "grass" && tile.flowerDots && tile.flowerDots.length > 0 && !tile.plant && !tile.poop) {
-        this.drawNaturalFlowers(cx, cy, tile.flowerDots);
+      const flowerScale = w.spring * 1.35 + w.summer * 0.58 + w.autumn * 0.22;
+      if (flowerScale > 0.1 && tile.type === "grass" && tile.flowerDots && tile.flowerDots.length > 0 && !tile.plant && !tile.poop) {
+        this.drawNaturalFlowers(cx, cy, tile.flowerDots, flowerScale);
       }
       if (tile.poop) {
         this.drawOrganicPoop(cx, cy);
@@ -689,17 +711,17 @@
       ctx2.stroke();
       ctx2.restore();
     },
-    drawNaturalFlowers(cx, cy, dots) {
+    drawNaturalFlowers(cx, cy, dots, flowerScale = 1) {
       const ctx2 = this.ctx;
       const zoom = this.cam.zoom;
       for (const d of dots) {
         const fx = cx + d.dx * zoom;
         const fy = cy + d.dy * zoom;
         ctx2.fillStyle = "#3f6212";
-        ctx2.fillRect(fx, fy, 0.8 * zoom, 1.8 * zoom);
+        ctx2.fillRect(fx, fy, 0.8 * zoom, 1.8 * zoom * Math.min(1.1, flowerScale));
         ctx2.fillStyle = d.color;
         ctx2.beginPath();
-        ctx2.arc(fx, fy - 1 * zoom, d.size * zoom, 0, Math.PI * 2);
+        ctx2.arc(fx, fy - 1 * zoom, d.size * zoom * flowerScale, 0, Math.PI * 2);
         ctx2.fill();
       }
     },
@@ -747,22 +769,29 @@
       ctx2.ellipse(cx, cy + 2 * zoom, baseR * 1.2, baseR * 0.55, 0, 0, Math.PI * 2);
       ctx2.fillStyle = "rgba(0,0,0,0.25)";
       ctx2.fill();
-      let foliageDark = "#1f3e17";
-      let foliageMid = "#2d5521";
-      let foliageLight = "#427532";
-      if (seasonState.isWinter) {
-        foliageDark = "#334155";
-        foliageMid = "#64748b";
-        foliageLight = "#e2e8f0";
-      } else if (seasonState.isAutumn) {
-        foliageDark = "#5c2d16";
-        foliageMid = "#9a4419";
-        foliageLight = "#d97706";
-      } else if (this.biomeId === "steppe") {
-        foliageDark = "#2e381b";
-        foliageMid = "#4a572a";
-        foliageLight = "#6b7b3b";
-      }
+      const w = seasonState.weights || { spring: 1, summer: 0, autumn: 0, winter: 0 };
+      const isSteppe = this.biomeId === "steppe";
+      const foliageDark = blend4RGB(
+        isSteppe ? [48, 66, 28] : [34, 78, 26],
+        isSteppe ? [42, 52, 24] : [20, 48, 16],
+        [92, 45, 22],
+        [51, 65, 85],
+        w
+      );
+      const foliageMid = blend4RGB(
+        isSteppe ? [76, 98, 42] : [54, 114, 38],
+        isSteppe ? [66, 80, 36] : [34, 72, 26],
+        [154, 68, 25],
+        [100, 116, 139],
+        w
+      );
+      const foliageLight = blend4RGB(
+        isSteppe ? [112, 138, 62] : [88, 162, 58],
+        isSteppe ? [96, 114, 52] : [52, 102, 40],
+        [217, 119, 6],
+        [226, 232, 240],
+        w
+      );
       ctx2.fillStyle = foliageDark;
       ctx2.beginPath();
       ctx2.arc(cx - (2 + seed) * zoom, cy - baseR + 2 * zoom, baseR * 0.85, 0, Math.PI * 2);
@@ -777,6 +806,15 @@
       ctx2.beginPath();
       ctx2.arc(cx - (0.5 + seed) * zoom, cy - baseR - 4 * zoom, baseR * 0.45, 0, Math.PI * 2);
       ctx2.fill();
+      if (w.spring > 0.12 && s >= 2) {
+        ctx2.fillStyle = `rgba(253, 224, 235, ${Math.min(0.95, w.spring * 1.1)})`;
+        const blossomR = 1.45 * w.spring * zoom;
+        ctx2.beginPath();
+        ctx2.arc(cx - 2.5 * zoom, cy - baseR - 1 * zoom, blossomR, 0, Math.PI * 2);
+        ctx2.arc(cx + 2.2 * zoom, cy - baseR - 3 * zoom, blossomR, 0, Math.PI * 2);
+        ctx2.arc(cx - 0.5 * zoom, cy - baseR - 5.2 * zoom, blossomR, 0, Math.PI * 2);
+        ctx2.fill();
+      }
       if (plant.berries > 0 && s >= 2) {
         ctx2.fillStyle = this.biomeId === "steppe" ? "#f97316" : "#dc2626";
         const berryR = 1.6 * zoom;
@@ -821,6 +859,7 @@
       ctx2.stroke();
       const crownX = cx + lean;
       const crownY = cy - trunkH - crownR * 0.35;
+      const w = seasonState.weights || { spring: 1, summer: 0, autumn: 0, winter: 0 };
       if (isPine) {
         ctx2.fillStyle = "#102a16";
         ctx2.beginPath();
@@ -843,8 +882,8 @@
         ctx2.lineTo(crownX - crownR * 0.45, crownY - crownR * 0.2);
         ctx2.closePath();
         ctx2.fill();
-        if (seasonState.isWinter) {
-          ctx2.fillStyle = "#f1f5f9";
+        if (w.winter > 0.05) {
+          ctx2.fillStyle = `rgba(241, 245, 249, ${Math.min(0.95, w.winter)})`;
           ctx2.beginPath();
           ctx2.moveTo(crownX, crownY - crownR * 1.12);
           ctx2.lineTo(crownX + crownR * 0.42, crownY - crownR * 0.25);
@@ -853,18 +892,29 @@
           ctx2.fill();
         }
       } else {
-        let cDark = this.biomeId === "steppe" ? "#2e381b" : "#142e0f";
-        let cMid = this.biomeId === "steppe" ? "#445427" : "#1e4417";
-        let cLight = this.biomeId === "steppe" ? "#677d3b" : "#316725";
-        if (seasonState.isWinter) {
-          cDark = "#334155";
-          cMid = "#475569";
-          cLight = "#f1f5f9";
-        } else if (seasonState.isAutumn) {
-          cDark = seed < 0.18 ? "#7c2d12" : "#713f12";
-          cMid = seed < 0.18 ? "#c2410c" : "#b45309";
-          cLight = seed < 0.18 ? "#f97316" : "#f59e0b";
-        }
+        const isSteppe = this.biomeId === "steppe";
+        const isRedAutumn = seed < 0.18;
+        const cDark = blend4RGB(
+          isSteppe ? [48, 66, 28] : [28, 68, 22],
+          isSteppe ? [38, 48, 22] : [16, 40, 14],
+          isRedAutumn ? [124, 45, 18] : [113, 63, 18],
+          [51, 65, 85],
+          w
+        );
+        const cMid = blend4RGB(
+          isSteppe ? [76, 102, 42] : [48, 108, 34],
+          isSteppe ? [60, 74, 34] : [26, 60, 20],
+          isRedAutumn ? [194, 65, 12] : [180, 83, 9],
+          [71, 85, 105],
+          w
+        );
+        const cLight = blend4RGB(
+          isSteppe ? [116, 146, 58] : [86, 162, 52],
+          isSteppe ? [88, 106, 48] : [40, 88, 32],
+          isRedAutumn ? [249, 115, 22] : [245, 158, 11],
+          [241, 245, 249],
+          w
+        );
         ctx2.fillStyle = cDark;
         ctx2.beginPath();
         ctx2.arc(crownX - crownR * 0.45, crownY + crownR * 0.2, crownR * 0.65, 0, Math.PI * 2);
@@ -881,6 +931,16 @@
         ctx2.arc(crownX - crownR * 0.2, crownY - crownR * 0.45, crownR * 0.5, 0, Math.PI * 2);
         ctx2.arc(crownX + crownR * 0.2, crownY - crownR * 0.4, crownR * 0.45, 0, Math.PI * 2);
         ctx2.fill();
+        if (w.spring > 0.15 && s >= 2) {
+          ctx2.fillStyle = seed < 0.2 ? `rgba(251, 207, 232, ${Math.min(0.92, w.spring)})` : `rgba(254, 249, 195, ${Math.min(0.88, w.spring)})`;
+          const bRad = 1.6 * w.spring * zoom;
+          ctx2.beginPath();
+          ctx2.arc(crownX - crownR * 0.35, crownY - crownR * 0.15, bRad, 0, Math.PI * 2);
+          ctx2.arc(crownX + crownR * 0.28, crownY - crownR * 0.32, bRad, 0, Math.PI * 2);
+          ctx2.arc(crownX - crownR * 0.05, crownY - crownR * 0.55, bRad, 0, Math.PI * 2);
+          ctx2.arc(crownX + crownR * 0.42, crownY + crownR * 0.1, bRad, 0, Math.PI * 2);
+          ctx2.fill();
+        }
       }
       ctx2.restore();
     },
@@ -925,7 +985,11 @@
       ctx2.lineTo(cx - 1 * zoom, cy + 3 * zoom);
       ctx2.closePath();
       ctx2.fill();
-      ctx2.fillStyle = seasonState.isWinter ? "#e2e8f0" : cLight;
+      const sw = getLocalSeasonWeights(gx, gy);
+      let cLightRGB = [115, 128, 148];
+      if (this.biomeId === "karst_canyon") cLightRGB = [142, 158, 175];
+      else if (this.biomeId === "steppe") cLightRGB = [140, 123, 102];
+      ctx2.fillStyle = blend4RGB(cLightRGB, cLightRGB, cLightRGB, [232, 238, 246], sw);
       ctx2.beginPath();
       ctx2.moveTo(cx - w * 0.6, cy - h);
       ctx2.lineTo(cx + w * 0.2, cy - h * 1.2);
@@ -979,7 +1043,9 @@
       ctx2.lineTo(cx - 3 * zoom, cy + 2 * zoom);
       ctx2.closePath();
       ctx2.fill();
-      ctx2.fillStyle = seasonState.isWinter ? "#cbd5e1" : isCritical ? "#5a391a" : isWeathered ? "#714620" : "#8a5829";
+      const w = seasonState.weights || { spring: 1, summer: 0, autumn: 0, winter: 0 };
+      const baseRoofRGB = isCritical ? [90, 57, 26] : isWeathered ? [113, 70, 32] : [138, 88, 41];
+      ctx2.fillStyle = blend4RGB(baseRoofRGB, baseRoofRGB, baseRoofRGB, [203, 213, 225], w);
       ctx2.beginPath();
       ctx2.moveTo(cx + 3 * zoom, cy + 2 * zoom);
       ctx2.lineTo(cx, cy - 18 * zoom);

@@ -6,7 +6,7 @@
 
 | Datei | Zeilen | Zuständigkeit |
 | :--- | ---: | :--- |
-| `src/config.js` | 92 | Globale Konstanten, Vorrats-Startwerte, Hütten- & Fäulnis-Parameter |
+| `src/config.js` | 110 | Globale Konstanten, Vorrats-Startwerte, Hütten- & Fäulnis-Parameter |
 | `src/isometric.js` | 35 | 2:1 Isometrie-Projektion (gridToScreen / screenToGrid) & Kamera |
 | `src/pathfinding.js` | 99 | Deterministische BFS-Wegfindung & Begehbarkeits-Prüfung (Wasserfurten) |
 | `src/foraging.js` | 255 | Karten-Suchfunktionen (Beeren, Wurzeln, Fischgründe, Bäume, Felsen, Ufer, Feuer, Hüttenplatz) |
@@ -18,14 +18,14 @@
 | `src/human/actions.js` | 342 | Hominiden-Aktionsausführung bei Ankunft (onArrived) & Abschluss (finishAction) |
 | `src/human/social.js` | 103 | Soziale Rituale (Lagerfeuer-Kreis, Plaudern, Kinderspiel) & Geburt (giveBirth) |
 | `src/render.js` | 119 | Haupt-Renderer & Y+X Tiefensortierung (Occlusion) |
-| `src/render/environment.js` | 749 | Canvas-Zeichnung für Boden, Wasser, Blumen, Sträucher, Bäume, Felsen, Hütten & Feuer |
+| `src/render/environment.js` | 822 | Canvas-Zeichnung für Boden, Wasser, Blumen, Sträucher, Bäume, Felsen, Hütten & Feuer |
 | `src/render/animals.js` | 340 | Prozedurale Vektor-Zeichnung der 4 Wildtier-Arten (drawAnimal) |
 | `src/render/humans.js` | 209 | Prozedurale Vektor-Zeichnung der Hominiden, Werkzeuge, Traglinge & Icons (drawHuman) |
 | `src/main.js` | 604 | Browser-Einstieg, Game-Loop, DOM-Inspektor-Karten, Hitbox-Klick & Umwelt-Werkzeuge |
 
 ## 2. Exakte Zeilennummern aller Funktionen, Klassen & Exporte
 
-### `src/config.js` (92 Zeilen)
+### `src/config.js` (110 Zeilen)
 - **L4**: `export const TILE_W = 64;`
 - **L5**: `export const TILE_H = 32;`
 - **L6**: `export const MAP_SIZE = 26;`
@@ -38,7 +38,7 @@
 - **L42**: `export const SPOILAGE_CONFIG =`
 - **L51**: `export const SEASONS = [`
 - **L58**: `export const seasonState =`
-- **L69**: `export function advanceSeasonClock(dtSec, logEvent = null)`
+- **L71**: `export function advanceSeasonClock(dtSec, logEvent = null)`
 
 ### `src/isometric.js` (35 Zeilen)
 - **L3**: `export class Camera`
@@ -131,18 +131,20 @@
 - **L7**: `constructor(ctx, camera)`
 - **L13**: `render(map, humans, animals, hoveredGrid, selectedHumanId, dtSec, fireIntensity = 100)`
 
-### `src/render/environment.js` (749 Zeilen)
-- **L6**: `export const environmentRenderMethods =`
-- **L7**: `drawGround(tile, gx, gy)`
-- **L142**: `drawWaterWaves(cx, cy)`
-- **L162**: `drawNaturalFlowers(cx, cy, dots)`
-- **L177**: `drawOrganicPoop(cx, cy)`
-- **L192**: `drawOrganicBush(cx, cy, plant)`
-- **L281**: `drawOrganicTree(cx, cy, plant)`
-- **L400**: `drawNaturalRock(cx, cy, gx = 0, gy = 0, stoneStock = 8, maxStoneStock = 8)`
-- **L474**: `drawPrimitiveShelter(cx, cy, shelterData = null)`
-- **L571**: `drawCampfire(gx, gy, cx, cy, fireIntensity = 100)`
-- **L727**: `drawHoverCursor(gx, gy)`
+### `src/render/environment.js` (822 Zeilen)
+- **L7**: `function blend4RGB(cSpring, cSummer, cAutumn, cWinter, w)`
+- **L15**: `function getLocalSeasonWeights(gx, gy)`
+- **L38**: `export const environmentRenderMethods =`
+- **L39**: `drawGround(tile, gx, gy)`
+- **L161**: `drawWaterWaves(cx, cy)`
+- **L181**: `drawNaturalFlowers(cx, cy, dots, flowerScale = 1.0)`
+- **L196**: `drawOrganicPoop(cx, cy)`
+- **L211**: `drawOrganicBush(cx, cy, plant)`
+- **L320**: `drawOrganicTree(cx, cy, plant)`
+- **L467**: `drawNaturalRock(cx, cy, gx = 0, gy = 0, stoneStock = 8, maxStoneStock = 8)`
+- **L545**: `drawPrimitiveShelter(cx, cy, shelterData = null)`
+- **L644**: `drawCampfire(gx, gy, cx, cy, fireIntensity = 100)`
+- **L800**: `drawHoverCursor(gx, gy)`
 
 ### `src/render/animals.js` (340 Zeilen)
 - **L6**: `export const animalRenderMethods =`

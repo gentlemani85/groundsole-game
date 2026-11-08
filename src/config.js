@@ -63,14 +63,18 @@ export const seasonState = {
   isSpring: true,
   isSummer: false,
   isAutumn: false,
-  isWinter: false
+  isWinter: false,
+  // Kontinuierliche Interpolations-Gewichte (Summe = 1.0) für butterweiche Farbübergänge
+  weights: { spring: 1, summer: 0, autumn: 0, winter: 0 }
 };
 
 export function advanceSeasonClock(dtSec, logEvent = null) {
   if (dtSec <= 0) return;
   const prevIndex = seasonState.index;
   seasonState.elapsedYears += (dtSec / 50);
-  const newIndex = Math.floor((seasonState.elapsedYears % 1) * 4) % 4;
+
+  const yearFrac = ((seasonState.elapsedYears % 1) + 1) % 1; // 0.0 bis 1.0
+  const newIndex = Math.floor(yearFrac * 4) % 4;
   seasonState.index = newIndex;
   seasonState.key = SEASONS[newIndex].key;
   seasonState.label = SEASONS[newIndex].label;
@@ -78,6 +82,20 @@ export function advanceSeasonClock(dtSec, logEvent = null) {
   seasonState.isSummer = (newIndex === 1);
   seasonState.isAutumn = (newIndex === 2);
   seasonState.isWinter = (newIndex === 3);
+
+  // Kontinuierliche 4-Phasen-Interpolation zwischen den Jahreszeiten-Mitten (0.125, 0.375, 0.625, 0.875)
+  const yearPos = yearFrac * 4; // 0.0 bis 4.0
+  const shifted = (yearPos - 0.5 + 4.0) % 4.0;
+  const idxA = Math.floor(shifted) % 4;
+  const idxB = (idxA + 1) % 4;
+  const rawT = shifted - Math.floor(shifted);
+  // Smoothstep (S-Kurve) für organischen Übergang ohne Sprung
+  const smoothT = rawT * rawT * (3 - 2 * rawT);
+
+  const keys = ['spring', 'summer', 'autumn', 'winter'];
+  seasonState.weights = { spring: 0, summer: 0, autumn: 0, winter: 0 };
+  seasonState.weights[keys[idxA]] = 1 - smoothT;
+  seasonState.weights[keys[idxB]] = smoothT;
 
   if (newIndex !== prevIndex && logEvent) {
     if (newIndex === 0) {
