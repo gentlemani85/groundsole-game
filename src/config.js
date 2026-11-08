@@ -7,6 +7,8 @@ export const MAP_SIZE = 26;
 
 // Start-Zeitrechnung: Acheuléen (-600.000 v. Chr.)
 export const START_YEAR = -600000;
+// 1 Spieljahr = 480s (8 Minuten bei 1x) -> 1 Jahreszeit = 120s (100s Hauptjahreszeit + 20s Übergang)
+export const SECONDS_PER_YEAR = 480;
 
 // Zentrales Stammeslager am Feuer (12, 12)
 export const CAMP_CENTER = { x: 12, y: 12 };
@@ -33,7 +35,7 @@ export const SHELTER_CONFIG = {
 
 // Vorrats-Limits & Fäulnis-Thermodynamik (Keine Konserven / offener Erdboden)
 export const STORAGE_LIMITS = {
-  maxFood: 28,             // Maximal 28 Einheiten auf offenem Waldboden
+  maxFood: 34,             // Maximal 34 Einheiten auf offenem Waldboden (Wintervorrat)
   maxWood: 35,
   maxStone: 25,
   maxWater: 20
@@ -56,7 +58,7 @@ export const SEASONS = [
 ];
 
 export const seasonState = {
-  elapsedYears: 0.125,
+  elapsedYears: 0,
   index: 0,
   key: 'spring',
   label: 'Frühling 🌱',
@@ -64,17 +66,20 @@ export const seasonState = {
   isSummer: false,
   isAutumn: false,
   isWinter: false,
-  // Kontinuierliche Interpolations-Gewichte (Summe = 1.0) für butterweiche Farbübergänge
+  // Kontinuierliche Interpolations-Gewichte (Summe = 1.0)
   weights: { spring: 1, summer: 0, autumn: 0, winter: 0 }
 };
 
 export function advanceSeasonClock(dtSec, logEvent = null) {
   if (dtSec <= 0) return;
   const prevIndex = seasonState.index;
-  seasonState.elapsedYears += (dtSec / 50);
+  seasonState.elapsedYears += (dtSec / SECONDS_PER_YEAR);
 
   const yearFrac = ((seasonState.elapsedYears % 1) + 1) % 1; // 0.0 bis 1.0
-  const newIndex = Math.floor(yearFrac * 4) % 4;
+  const yearPos = yearFrac * 4; // 0.0 bis 4.0 (jede Einheit = 1 Jahreszeit à 120s)
+  const newIndex = Math.floor(yearPos) % 4;
+  const seasonProgress = yearPos - Math.floor(yearPos); // 0.0 bis 1.0 innerhalb der aktuellen Jahreszeit
+
   seasonState.index = newIndex;
   seasonState.key = SEASONS[newIndex].key;
   seasonState.label = SEASONS[newIndex].label;
@@ -83,22 +88,21 @@ export function advanceSeasonClock(dtSec, logEvent = null) {
   seasonState.isAutumn = (newIndex === 2);
   seasonState.isWinter = (newIndex === 3);
 
-  // Kontinuierliche 4-Phasen-Interpolation:
-  // Jede Jahreszeit zeigt in ihrer Kernphase ihre klare Charakteristik und blendet
-  // über eine weiche Smoothstep-Kurve stufenlos in die nächste Jahreszeit über.
-  const yearPos = yearFrac * 4; // 0.0 bis 4.0
-  const shifted = (yearPos - 0.5 + 4.0) % 4.0;
-  const idxA = Math.floor(shifted) % 4;
-  const idxB = (idxA + 1) % 4;
-  const rawT = shifted - Math.floor(shifted); // 0.0 (Mitte Saison A) bis 1.0 (Mitte Saison B)
-  // Sanftes Plateau in der Saisonmitte (0..0.18 und 0.82..1.0) + kontinuierlicher Übergang (0.18..0.82)
-  const clampedT = Math.max(0, Math.min(1, (rawT - 0.18) / 0.64));
-  const smoothT = clampedT * clampedT * (3 - 2 * clampedT);
+  // Phasen-Trennung pro Jahreszeit (120s):
+  // - Erste 100s (0.0 bis 100/120): 100% stabile Hauptjahreszeit ohne Farbdrift
+  // - Letzte 20s (100/120 bis 1.0): Sanfter, gradueller Smoothstep-Übergang in die Folge-Jahreszeit
+  const stableFrac = 100 / 120;
+  const nextIndex = (newIndex + 1) % 4;
+  let smoothT = 0;
+  if (seasonProgress > stableFrac) {
+    const rawT = Math.min(1, (seasonProgress - stableFrac) / (1 - stableFrac));
+    smoothT = rawT * rawT * (3 - 2 * rawT);
+  }
 
   const keys = ['spring', 'summer', 'autumn', 'winter'];
   seasonState.weights = { spring: 0, summer: 0, autumn: 0, winter: 0 };
-  seasonState.weights[keys[idxA]] = 1 - smoothT;
-  seasonState.weights[keys[idxB]] = smoothT;
+  seasonState.weights[keys[newIndex]] = 1 - smoothT;
+  seasonState.weights[keys[nextIndex]] = smoothT;
 
   if (newIndex !== prevIndex && logEvent) {
     if (newIndex === 0) {

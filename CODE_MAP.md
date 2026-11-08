@@ -6,14 +6,14 @@
 
 | Datei | Zeilen | Zuständigkeit |
 | :--- | ---: | :--- |
-| `src/config.js` | 113 | Globale Konstanten, Vorrats-Startwerte, Hütten- & Fäulnis-Parameter |
+| `src/config.js` | 117 | Globale Konstanten, Vorrats-Startwerte, Hütten- & Fäulnis-Parameter |
 | `src/isometric.js` | 35 | 2:1 Isometrie-Projektion (gridToScreen / screenToGrid) & Kamera |
 | `src/pathfinding.js` | 99 | Deterministische BFS-Wegfindung & Begehbarkeits-Prüfung (Wasserfurten) |
 | `src/foraging.js` | 255 | Karten-Suchfunktionen (Beeren, Wurzeln, Fischgründe, Bäume, Felsen, Ufer, Feuer, Hüttenplatz) |
 | `src/map.js` | 563 | Biom-Definitionen, prozedurale Karten-Generierung & NPK-/Pflanzen-/Feuer-Ökologie-Tick |
 | `src/wildlife.js` | 294 | Tier-Spezies (Hirsch, Wildschwein, Bison, Feldhase), Flucht-/Grasungs-KI & Spawn |
 | `src/migration.js` | 283 | Ökologischer Druck-Rechner & nomadischer Tal-Wechsel (Migration) |
-| `src/human.js` | 628 | Hominiden-Kernklasse (Konstruktor, BFS-Bewegung, Hetzjagd, Stoffwechsel-Loop) & Zuzug |
+| `src/human.js` | 629 | Hominiden-Kernklasse (Konstruktor, BFS-Bewegung, Hetzjagd, Stoffwechsel-Loop) & Zuzug |
 | `src/human/tasks.js` | 329 | Hominiden-Entscheidungsbaum & Zielsuche (seekFood, seekWater, seekProductiveTask, ...) |
 | `src/human/actions.js` | 342 | Hominiden-Aktionsausführung bei Ankunft (onArrived) & Abschluss (finishAction) |
 | `src/human/social.js` | 103 | Soziale Rituale (Lagerfeuer-Kreis, Plaudern, Kinderspiel) & Geburt (giveBirth) |
@@ -25,20 +25,21 @@
 
 ## 2. Exakte Zeilennummern aller Funktionen, Klassen & Exporte
 
-### `src/config.js` (113 Zeilen)
+### `src/config.js` (117 Zeilen)
 - **L4**: `export const TILE_W = 64;`
 - **L5**: `export const TILE_H = 32;`
 - **L6**: `export const MAP_SIZE = 26;`
 - **L9**: `export const START_YEAR = -600000;`
-- **L12**: `export const CAMP_CENTER = { x: 12, y: 12 };`
-- **L14**: `export const campfireStock =`
-- **L22**: `export const fireState =`
-- **L28**: `export const SHELTER_CONFIG =`
-- **L35**: `export const STORAGE_LIMITS =`
-- **L42**: `export const SPOILAGE_CONFIG =`
-- **L51**: `export const SEASONS = [`
-- **L58**: `export const seasonState =`
-- **L71**: `export function advanceSeasonClock(dtSec, logEvent = null)`
+- **L11**: `export const SECONDS_PER_YEAR = 480;`
+- **L14**: `export const CAMP_CENTER = { x: 12, y: 12 };`
+- **L16**: `export const campfireStock =`
+- **L24**: `export const fireState =`
+- **L30**: `export const SHELTER_CONFIG =`
+- **L37**: `export const STORAGE_LIMITS =`
+- **L44**: `export const SPOILAGE_CONFIG =`
+- **L53**: `export const SEASONS = [`
+- **L60**: `export const seasonState =`
+- **L73**: `export function advanceSeasonClock(dtSec, logEvent = null)`
 
 ### `src/isometric.js` (35 Zeilen)
 - **L3**: `export class Camera`
@@ -84,14 +85,14 @@
 - **L158**: `export function updateMigration(dt, map, humans, animals, campfireStock, fireState, advanceYearCallback, logEvent)`
 - **L208**: `export function executeMigrationArrival(oldMap, humans, animals, campfireStock, fireState, advanceYearCallback, logEvent)`
 
-### `src/human.js` (628 Zeilen)
+### `src/human.js` (629 Zeilen)
 - **L9**: `export class Human`
 - **L10**: `constructor(id, name, gender, role, x, y, tint, ageYears = 24)`
 - **L50**: `setMoveTarget(map, tx, ty, intent, huntTarget = null)`
 - **L73**: `update(dt, map, humans, animals, logEvent)`
-- **L559**: `die(cause, logEvent)`
-- **L578**: `export function maybeSpawnForeignWanderer(humans, logEvent, map = null)`
-- **L620**: `export function createInitialHumans()`
+- **L560**: `die(cause, logEvent)`
+- **L579**: `export function maybeSpawnForeignWanderer(humans, logEvent, map = null)`
+- **L621**: `export function createInitialHumans()`
 
 ### `src/human/tasks.js` (329 Zeilen)
 - **L18**: `export const humanTaskMethods =`

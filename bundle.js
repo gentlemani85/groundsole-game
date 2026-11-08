@@ -4,6 +4,7 @@
   var TILE_H = 32;
   var MAP_SIZE = 26;
   var START_YEAR = -6e5;
+  var SECONDS_PER_YEAR = 480;
   var CAMP_CENTER = { x: 12, y: 12 };
   var campfireStock = {
     stone: 3,
@@ -27,8 +28,8 @@
     // Reparatur-Bedarf ab unter 65% Haltbarkeit
   };
   var STORAGE_LIMITS = {
-    maxFood: 28,
-    // Maximal 28 Einheiten auf offenem Waldboden
+    maxFood: 34,
+    // Maximal 34 Einheiten auf offenem Waldboden (Wintervorrat)
     maxWood: 35,
     maxStone: 25,
     maxWater: 20
@@ -45,7 +46,7 @@
     { key: "winter", label: "Winter \u2744\uFE0F" }
   ];
   var seasonState = {
-    elapsedYears: 0.125,
+    elapsedYears: 0,
     index: 0,
     key: "spring",
     label: "Fr\xFChling \u{1F331}",
@@ -53,15 +54,17 @@
     isSummer: false,
     isAutumn: false,
     isWinter: false,
-    // Kontinuierliche Interpolations-Gewichte (Summe = 1.0) für butterweiche Farbübergänge
+    // Kontinuierliche Interpolations-Gewichte (Summe = 1.0)
     weights: { spring: 1, summer: 0, autumn: 0, winter: 0 }
   };
   function advanceSeasonClock(dtSec, logEvent2 = null) {
     if (dtSec <= 0) return;
     const prevIndex = seasonState.index;
-    seasonState.elapsedYears += dtSec / 50;
+    seasonState.elapsedYears += dtSec / SECONDS_PER_YEAR;
     const yearFrac = (seasonState.elapsedYears % 1 + 1) % 1;
-    const newIndex = Math.floor(yearFrac * 4) % 4;
+    const yearPos = yearFrac * 4;
+    const newIndex = Math.floor(yearPos) % 4;
+    const seasonProgress = yearPos - Math.floor(yearPos);
     seasonState.index = newIndex;
     seasonState.key = SEASONS[newIndex].key;
     seasonState.label = SEASONS[newIndex].label;
@@ -69,17 +72,17 @@
     seasonState.isSummer = newIndex === 1;
     seasonState.isAutumn = newIndex === 2;
     seasonState.isWinter = newIndex === 3;
-    const yearPos = yearFrac * 4;
-    const shifted = (yearPos - 0.5 + 4) % 4;
-    const idxA = Math.floor(shifted) % 4;
-    const idxB = (idxA + 1) % 4;
-    const rawT = shifted - Math.floor(shifted);
-    const clampedT = Math.max(0, Math.min(1, (rawT - 0.18) / 0.64));
-    const smoothT = clampedT * clampedT * (3 - 2 * clampedT);
+    const stableFrac = 100 / 120;
+    const nextIndex = (newIndex + 1) % 4;
+    let smoothT = 0;
+    if (seasonProgress > stableFrac) {
+      const rawT = Math.min(1, (seasonProgress - stableFrac) / (1 - stableFrac));
+      smoothT = rawT * rawT * (3 - 2 * rawT);
+    }
     const keys = ["spring", "summer", "autumn", "winter"];
     seasonState.weights = { spring: 0, summer: 0, autumn: 0, winter: 0 };
-    seasonState.weights[keys[idxA]] = 1 - smoothT;
-    seasonState.weights[keys[idxB]] = smoothT;
+    seasonState.weights[keys[newIndex]] = 1 - smoothT;
+    seasonState.weights[keys[nextIndex]] = smoothT;
     if (newIndex !== prevIndex && logEvent2) {
       if (newIndex === 0) {
         logEvent2("\u{1F331} Schneeschmelze im Tal! Der Fr\xFChling weckt neue Knospen und Wildblumen.");
@@ -3021,12 +3024,12 @@
     update(dt, map2, humans2, animals2, logEvent2) {
       if (!this.isAlive) {
         if (dt > 0) {
-          this.timeSinceDeathYears = (this.timeSinceDeathYears || 0) + dt / 50;
+          this.timeSinceDeathYears = (this.timeSinceDeathYears || 0) + dt / SECONDS_PER_YEAR;
         }
         return;
       }
       const prevAge = this.ageYears;
-      this.ageYears += dt / 50;
+      this.ageYears += dt / SECONDS_PER_YEAR;
       if (prevAge < 4 && this.ageYears >= 4) {
         this.role = "Kind (Heranwachsend)";
         logEvent2(`\u{1F9D2} ${this.name} ist 4 Jahre alt geworden und erkundet nun spielerisch das Lager!`);
@@ -3110,7 +3113,8 @@
       if (this.nursingTimer > 0) {
         this.nursingTimer -= dt;
       }
-      if (this.ageYears >= 13 && this.ageYears <= 48 && this.needs.water > 40 && this.needs.food > 40 && this.nursingTimer <= 0) {
+      const carriesInfant = this.gender === "f" && humans2.some((h) => h.isAlive && h.motherId === this.id && h.ageYears < 4);
+      if (this.ageYears >= 13 && this.ageYears <= 48 && this.needs.water > 40 && this.needs.food > 40 && this.nursingTimer <= 0 && !carriesInfant && this.pregnancyTimer <= 0) {
         this.needs.libido = Math.min(100, this.needs.libido + dt * 2.2);
       } else {
         this.needs.libido = Math.max(0, this.needs.libido - dt * 0.5);
@@ -4120,12 +4124,12 @@
     const dtSec = Math.min(0.1, (now - lastTime) / 1e3) * simSpeed;
     lastTime = now;
     if (dtSec > 0) {
-      elapsedYears += dtSec / 50;
+      elapsedYears += dtSec / SECONDS_PER_YEAR;
     }
     updateEcology(map, dtSec, logEvent);
     map = updateMigration(dtSec, map, humans, animals, campfireStock, fireState, (addY) => {
       elapsedYears += addY;
-      advanceSeasonClock(addY * 50);
+      advanceSeasonClock(addY * SECONDS_PER_YEAR);
     }, logEvent);
     updateSpookTimer(dtSec);
     maybeSpawnWildAnimal(animals, humans, logEvent, map);

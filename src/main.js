@@ -1,4 +1,4 @@
-import { MAP_SIZE, campfireStock, CAMP_CENTER, fireState, START_YEAR, seasonState, advanceSeasonClock } from './config.js';
+import { MAP_SIZE, campfireStock, CAMP_CENTER, fireState, START_YEAR, SECONDS_PER_YEAR, seasonState, advanceSeasonClock } from './config.js';
 import { Camera } from './isometric.js';
 import { createMap, updateEcology } from './map.js';
 import { Renderer } from './render.js';
@@ -563,9 +563,9 @@ function loop(now) {
   const dtSec = Math.min(0.1, (now - lastTime) / 1000) * simSpeed;
   lastTime = now;
 
-  // 0. Weltzeit-Fortschritt (exakt synchronisiert mit Alterung: 50s Simulationszeit = 1 Jahr)
+  // 0. Weltzeit-Fortschritt (exakt synchronisiert mit Alterung: SECONDS_PER_YEAR = 1 Jahr)
   if (dtSec > 0) {
-    elapsedYears += (dtSec / 50);
+    elapsedYears += (dtSec / SECONDS_PER_YEAR);
   }
 
   // 1. Ökologie & dezentrale Feuer-/Hütten-Thermodynamik
@@ -574,7 +574,7 @@ function loop(now) {
   // 1.5 Nomadische Migration & Verlassen des übernutzten Tals
   map = updateMigration(dtSec, map, humans, animals, campfireStock, fireState, (addY) => {
     elapsedYears += addY;
-    advanceSeasonClock(addY * 50);
+    advanceSeasonClock(addY * SECONDS_PER_YEAR);
   }, logEvent);
 
   // 2. Wildtier-Spawn & Update (mit Vergrämungs-Abklingzeit & Biom-Fauna)

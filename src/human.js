@@ -1,4 +1,4 @@
-import { fireState, MAP_SIZE, CAMP_CENTER, seasonState } from './config.js';
+import { fireState, MAP_SIZE, CAMP_CENTER, SECONDS_PER_YEAR, seasonState } from './config.js';
 import { findPath, isTileWalkable } from './pathfinding.js';
 import { findNearestRootDigSpot } from './foraging.js';
 import { spookWildlife } from './wildlife.js';
@@ -73,14 +73,14 @@ export class Human {
   update(dt, map, humans, animals, logEvent) {
     if (!this.isAlive) {
       if (dt > 0) {
-        this.timeSinceDeathYears = (this.timeSinceDeathYears || 0) + (dt / 50);
+        this.timeSinceDeathYears = (this.timeSinceDeathYears || 0) + (dt / SECONDS_PER_YEAR);
       }
       return;
     }
 
     // 1. Alterung & präzise Todesursachen-Ermittlung
     const prevAge = this.ageYears;
-    this.ageYears += (dt / 50);
+    this.ageYears += (dt / SECONDS_PER_YEAR);
 
     // Entwicklungsübergang mit 4 Jahren (vom Tragling zum freilaufenden Kind)
     if (prevAge < 4 && this.ageYears >= 4) {
@@ -198,8 +198,9 @@ export class Human {
       this.nursingTimer -= dt;
     }
 
-    // Paarungstrieb (Geschlechtsreife ab 13 Jahren im Paläolithikum)
-    if (this.ageYears >= 13 && this.ageYears <= 48 && this.needs.water > 40 && this.needs.food > 40 && this.nursingTimer <= 0) {
+    // Paarungstrieb (Geschlechtsreife ab 13 Jahren im Paläolithikum; Mütter mit Tragling < 4 J. pausieren)
+    const carriesInfant = (this.gender === 'f') && humans.some(h => h.isAlive && h.motherId === this.id && h.ageYears < 4);
+    if (this.ageYears >= 13 && this.ageYears <= 48 && this.needs.water > 40 && this.needs.food > 40 && this.nursingTimer <= 0 && !carriesInfant && this.pregnancyTimer <= 0) {
       this.needs.libido = Math.min(100, this.needs.libido + dt * 2.2);
     } else {
       this.needs.libido = Math.max(0, this.needs.libido - dt * 0.5);
