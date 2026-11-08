@@ -10,12 +10,12 @@
 | `src/isometric.js` | 35 | 2:1 Isometrie-Projektion (gridToScreen / screenToGrid) & Kamera |
 | `src/pathfinding.js` | 99 | Deterministische BFS-Wegfindung & Begehbarkeits-Prüfung (Wasserfurten) |
 | `src/foraging.js` | 255 | Karten-Suchfunktionen (Beeren, Wurzeln, Fischgründe, Bäume, Felsen, Ufer, Feuer, Hüttenplatz) |
-| `src/map.js` | 563 | Biom-Definitionen, prozedurale Karten-Generierung & NPK-/Pflanzen-/Feuer-Ökologie-Tick |
+| `src/map.js` | 569 | Biom-Definitionen, prozedurale Karten-Generierung & NPK-/Pflanzen-/Feuer-Ökologie-Tick |
 | `src/wildlife.js` | 294 | Tier-Spezies (Hirsch, Wildschwein, Bison, Feldhase), Flucht-/Grasungs-KI & Spawn |
 | `src/migration.js` | 283 | Ökologischer Druck-Rechner & nomadischer Tal-Wechsel (Migration) |
 | `src/human.js` | 629 | Hominiden-Kernklasse (Konstruktor, BFS-Bewegung, Hetzjagd, Stoffwechsel-Loop) & Zuzug |
 | `src/human/tasks.js` | 329 | Hominiden-Entscheidungsbaum & Zielsuche (seekFood, seekWater, seekProductiveTask, ...) |
-| `src/human/actions.js` | 342 | Hominiden-Aktionsausführung bei Ankunft (onArrived) & Abschluss (finishAction) |
+| `src/human/actions.js` | 339 | Hominiden-Aktionsausführung bei Ankunft (onArrived) & Abschluss (finishAction) |
 | `src/human/social.js` | 103 | Soziale Rituale (Lagerfeuer-Kreis, Plaudern, Kinderspiel) & Geburt (giveBirth) |
 | `src/render.js` | 119 | Haupt-Renderer & Y+X Tiefensortierung (Occlusion) |
 | `src/render/environment.js` | 901 | Canvas-Zeichnung für Boden, Wasser, Blumen, Sträucher, Bäume, Felsen, Hütten & Feuer |
@@ -63,7 +63,7 @@
 - **L207**: `export function findNearestLitFireTile(map, fromX, fromY)`
 - **L231**: `export function findFreeShelterSpotNearCamp(map, humans = [])`
 
-### `src/map.js` (563 Zeilen)
+### `src/map.js` (569 Zeilen)
 - **L9**: `export const BIOMES =`
 - **L40**: `export function createMap(biomeId = 'river_valley')`
 - **L321**: `export function updateEcology(map, dtSec, logEvent)`
@@ -112,7 +112,7 @@
 - **L321**: `findNearestLitFire(map)`
 - **L325**: `findFreeShelterSpot(map, humans = [])`
 
-### `src/human/actions.js` (342 Zeilen)
+### `src/human/actions.js` (339 Zeilen)
 - **L7**: `export const humanActionMethods =`
 - **L8**: `onArrived(map, humans, animals, logEvent)`
 - **L197**: `finishAction(map, animals, logEvent)`

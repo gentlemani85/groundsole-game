@@ -120,14 +120,14 @@ export function createMap(biomeId = 'river_valley') {
         if (biome.id === 'forest') {
           // Dichter Urwald: 55% Baumbedeckung überall außer im Lagerzentrum
           if (!isNearCamp && Math.random() < 0.55) {
-            const treeMaxAge = 1000 + Math.random() * 500;
+            const treeMaxAge = 3600 + Math.random() * 2400;
             plant = {
               type: 'tree',
               stage: 3,
               woodStock: 4,
               seedVariance: Math.random(),
               maxAge: treeMaxAge,
-              ageTimer: Math.random() * (treeMaxAge * 0.7)
+              ageTimer: Math.random() * (treeMaxAge * 0.4)
             };
             npk = 75;
           } else if (Math.random() < 0.08) {
@@ -183,14 +183,14 @@ export function createMap(biomeId = 'river_valley') {
         } else {
           // Fluss-Aue: Ausgewogene Vegetation
           if (x <= 5 && Math.random() < 0.35) {
-            const treeMaxAge = 900 + Math.random() * 600;
+            const treeMaxAge = 3600 + Math.random() * 2400;
             plant = {
               type: 'tree',
               stage: 3,
               woodStock: 4,
               seedVariance: Math.random(),
               maxAge: treeMaxAge,
-              ageTimer: Math.random() * (treeMaxAge * 0.7)
+              ageTimer: Math.random() * (treeMaxAge * 0.4)
             };
             npk = 65;
           } else if ((y >= 20 && Math.random() < 0.25) || (Math.hypot(x - CAMP_CENTER.x, y - CAMP_CENTER.y) > 3 && Math.hypot(x - CAMP_CENTER.x, y - CAMP_CENTER.y) < 7 && Math.random() < 0.12)) {
@@ -523,9 +523,15 @@ export function updateEcology(map, dtSec, logEvent) {
               logEvent(`🌱 Ein alter Beerenstrauch bei [${x}, ${y}] zieht sich in den schlafenden Wurzelstock zurück.`);
               continue;
             } else {
-              const compostNPK = 40;
+              // Baum fällt nicht lautlos ins Nichts, sondern verjüngt sich als kleiner Schössling (Stufe 1)
+              const compostNPK = 30;
               tile.npk = Math.min(100, tile.npk + compostNPK);
-              tile.plant = null;
+              p.stage = 1;
+              p.woodStock = 3;
+              p.ageTimer = 0;
+              p.growthTimer = 0;
+              p.maxAge = 3600 + Math.random() * 2400;
+              logEvent(`🌱 Ein uralter Baum bei [${x}, ${y}] gibt seine Nährstoffe frei – am Wurzelstock wächst ein neuer Schössling.`);
               continue;
             }
           }

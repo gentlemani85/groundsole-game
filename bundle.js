@@ -220,14 +220,14 @@
           const isNearCamp = Math.hypot(x - CAMP_CENTER.x, y - CAMP_CENTER.y) <= 2.2;
           if (biome.id === "forest") {
             if (!isNearCamp && Math.random() < 0.55) {
-              const treeMaxAge = 1e3 + Math.random() * 500;
+              const treeMaxAge = 3600 + Math.random() * 2400;
               plant = {
                 type: "tree",
                 stage: 3,
                 woodStock: 4,
                 seedVariance: Math.random(),
                 maxAge: treeMaxAge,
-                ageTimer: Math.random() * (treeMaxAge * 0.7)
+                ageTimer: Math.random() * (treeMaxAge * 0.4)
               };
               npk = 75;
             } else if (Math.random() < 0.08) {
@@ -279,14 +279,14 @@
             }
           } else {
             if (x <= 5 && Math.random() < 0.35) {
-              const treeMaxAge = 900 + Math.random() * 600;
+              const treeMaxAge = 3600 + Math.random() * 2400;
               plant = {
                 type: "tree",
                 stage: 3,
                 woodStock: 4,
                 seedVariance: Math.random(),
                 maxAge: treeMaxAge,
-                ageTimer: Math.random() * (treeMaxAge * 0.7)
+                ageTimer: Math.random() * (treeMaxAge * 0.4)
               };
               npk = 65;
             } else if (y >= 20 && Math.random() < 0.25 || Math.hypot(x - CAMP_CENTER.x, y - CAMP_CENTER.y) > 3 && Math.hypot(x - CAMP_CENTER.x, y - CAMP_CENTER.y) < 7 && Math.random() < 0.12) {
@@ -566,9 +566,14 @@
                 logEvent2(`\u{1F331} Ein alter Beerenstrauch bei [${x}, ${y}] zieht sich in den schlafenden Wurzelstock zur\xFCck.`);
                 continue;
               } else {
-                const compostNPK = 40;
+                const compostNPK = 30;
                 tile.npk = Math.min(100, tile.npk + compostNPK);
-                tile.plant = null;
+                p.stage = 1;
+                p.woodStock = 3;
+                p.ageTimer = 0;
+                p.growthTimer = 0;
+                p.maxAge = 3600 + Math.random() * 2400;
+                logEvent2(`\u{1F331} Ein uralter Baum bei [${x}, ${y}] gibt seine N\xE4hrstoffe frei \u2013 am Wurzelstock w\xE4chst ein neuer Sch\xF6ssling.`);
                 continue;
               }
             }
@@ -2822,20 +2827,16 @@
         if (t && t.plant && t.plant.type === "tree") {
           t.plant.woodStock--;
           if (t.plant.woodStock <= 0) {
-            if (Math.random() < 0.45) {
-              t.plant = {
-                type: "tree",
-                stage: 1,
-                growthTimer: 0,
-                woodStock: 3,
-                seedVariance: Math.random(),
-                maxAge: 900 + Math.random() * 600,
-                ageTimer: 0
-              };
-              logEvent2(`\u{1F331} Baumstumpf treibt neu aus (Stockausschlag) bei [${gx}, ${gy}].`);
-            } else {
-              t.plant = null;
-            }
+            t.plant = {
+              type: "tree",
+              stage: 1,
+              growthTimer: 0,
+              woodStock: 3,
+              seedVariance: t.plant.seedVariance || Math.random(),
+              maxAge: 3600 + Math.random() * 2400,
+              ageTimer: 0
+            };
+            logEvent2(`\u{1F331} Baum bei [${gx}, ${gy}] wurde abgeerntet und treibt am Wurzelstock neu aus.`);
           }
         }
         this.carried = "\u{1FAB5} Holz";

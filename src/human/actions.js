@@ -279,21 +279,18 @@ export const humanActionMethods = {
       if (t && t.plant && t.plant.type === 'tree') {
         t.plant.woodStock--;
         if (t.plant.woodStock <= 0) {
-          // 45% Chance auf Stockausschlag / natürlicher Neuaustrieb am Wurzelstock
-          if (Math.random() < 0.45) {
-            t.plant = {
-              type: 'tree',
-              stage: 1,
-              growthTimer: 0,
-              woodStock: 3,
-              seedVariance: Math.random(),
-              maxAge: 900 + Math.random() * 600,
-              ageTimer: 0
-            };
-            logEvent(`🌱 Baumstumpf treibt neu aus (Stockausschlag) bei [${gx}, ${gy}].`);
-          } else {
-            t.plant = null;
-          }
+          // Im Altpaläolithikum wurden mit Faustkeilen Äste & Stangenholz geerntet (Niederwald / Stockausschlag):
+          // Der Wurzelstock bleibt als kleiner Schössling (Stufe 1) erhalten und wächst über die Jahreszeiten nach.
+          t.plant = {
+            type: 'tree',
+            stage: 1,
+            growthTimer: 0,
+            woodStock: 3,
+            seedVariance: t.plant.seedVariance || Math.random(),
+            maxAge: 3600 + Math.random() * 2400,
+            ageTimer: 0
+          };
+          logEvent(`🌱 Baum bei [${gx}, ${gy}] wurde abgeerntet und treibt am Wurzelstock neu aus.`);
         }
       }
       this.carried = '🪵 Holz';
