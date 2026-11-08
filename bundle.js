@@ -873,22 +873,33 @@
       if (w.spring > 0.12 && s >= 2) {
         ctx2.fillStyle = `rgba(253, 224, 235, ${Math.min(0.95, w.spring * 1.1)})`;
         const blossomR = 1.45 * w.spring * zoom;
-        ctx2.beginPath();
-        ctx2.arc(cx - 2.5 * zoom, cy - baseR - 1 * zoom, blossomR, 0, Math.PI * 2);
-        ctx2.arc(cx + 2.2 * zoom, cy - baseR - 3 * zoom, blossomR, 0, Math.PI * 2);
-        ctx2.arc(cx - 0.5 * zoom, cy - baseR - 5.2 * zoom, blossomR, 0, Math.PI * 2);
-        ctx2.fill();
+        const bCoords = [
+          [cx - 2.5 * zoom, cy - baseR - 1 * zoom],
+          [cx + 2.2 * zoom, cy - baseR - 3 * zoom],
+          [cx - 0.5 * zoom, cy - baseR - 5.2 * zoom]
+        ];
+        for (const [bx, by] of bCoords) {
+          ctx2.beginPath();
+          ctx2.arc(bx, by, blossomR, 0, Math.PI * 2);
+          ctx2.fill();
+        }
       }
       if (plant.berries > 0 && s >= 2) {
         ctx2.fillStyle = this.biomeId === "steppe" ? "#f97316" : "#dc2626";
         const berryR = 1.6 * zoom;
-        ctx2.beginPath();
-        if (plant.berries >= 1) ctx2.arc(cx - 3 * zoom, cy - baseR + 1 * zoom, berryR, 0, Math.PI * 2);
-        if (plant.berries >= 2) ctx2.arc(cx + 3 * zoom, cy - baseR - 2 * zoom, berryR, 0, Math.PI * 2);
-        if (plant.berries >= 3) ctx2.arc(cx, cy - baseR - 6 * zoom, berryR, 0, Math.PI * 2);
-        if (plant.berries >= 4) ctx2.arc(cx - 2 * zoom, cy - baseR - 4 * zoom, berryR, 0, Math.PI * 2);
-        if (plant.berries >= 5) ctx2.arc(cx + 2 * zoom, cy - baseR - 5 * zoom, berryR, 0, Math.PI * 2);
-        ctx2.fill();
+        const berryCoords = [
+          [cx - 3 * zoom, cy - baseR + 1 * zoom],
+          [cx + 3 * zoom, cy - baseR - 2 * zoom],
+          [cx, cy - baseR - 6 * zoom],
+          [cx - 2 * zoom, cy - baseR - 4 * zoom],
+          [cx + 2 * zoom, cy - baseR - 5 * zoom]
+        ];
+        const count = Math.min(berryCoords.length, plant.berries);
+        for (let i = 0; i < count; i++) {
+          ctx2.beginPath();
+          ctx2.arc(berryCoords[i][0], berryCoords[i][1], berryR, 0, Math.PI * 2);
+          ctx2.fill();
+        }
       }
       ctx2.restore();
     },
@@ -998,12 +1009,17 @@
         if (w.spring > 0.15 && s >= 2) {
           ctx2.fillStyle = seed < 0.2 ? `rgba(251, 207, 232, ${Math.min(0.92, w.spring)})` : `rgba(254, 249, 195, ${Math.min(0.88, w.spring)})`;
           const bRad = 1.6 * w.spring * zoom;
-          ctx2.beginPath();
-          ctx2.arc(crownX - crownR * 0.35, crownY - crownR * 0.15, bRad, 0, Math.PI * 2);
-          ctx2.arc(crownX + crownR * 0.28, crownY - crownR * 0.32, bRad, 0, Math.PI * 2);
-          ctx2.arc(crownX - crownR * 0.05, crownY - crownR * 0.55, bRad, 0, Math.PI * 2);
-          ctx2.arc(crownX + crownR * 0.42, crownY + crownR * 0.1, bRad, 0, Math.PI * 2);
-          ctx2.fill();
+          const treeBlossoms = [
+            [crownX - crownR * 0.35, crownY - crownR * 0.15],
+            [crownX + crownR * 0.28, crownY - crownR * 0.32],
+            [crownX - crownR * 0.05, crownY - crownR * 0.55],
+            [crownX + crownR * 0.42, crownY + crownR * 0.1]
+          ];
+          for (const [bx, by] of treeBlossoms) {
+            ctx2.beginPath();
+            ctx2.arc(bx, by, bRad, 0, Math.PI * 2);
+            ctx2.fill();
+          }
         }
       }
       ctx2.restore();

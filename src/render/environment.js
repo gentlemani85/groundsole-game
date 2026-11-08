@@ -346,24 +346,34 @@ export const environmentRenderMethods = {
     if (w.spring > 0.12 && s >= 2) {
       ctx.fillStyle = `rgba(253, 224, 235, ${Math.min(0.95, w.spring * 1.1)})`;
       const blossomR = 1.45 * w.spring * zoom;
-      ctx.beginPath();
-      ctx.arc(cx - 2.5 * zoom, cy - baseR - 1 * zoom, blossomR, 0, Math.PI * 2);
-      ctx.arc(cx + 2.2 * zoom, cy - baseR - 3 * zoom, blossomR, 0, Math.PI * 2);
-      ctx.arc(cx - 0.5 * zoom, cy - baseR - 5.2 * zoom, blossomR, 0, Math.PI * 2);
-      ctx.fill();
+      const bCoords = [
+        [cx - 2.5 * zoom, cy - baseR - 1 * zoom],
+        [cx + 2.2 * zoom, cy - baseR - 3 * zoom],
+        [cx - 0.5 * zoom, cy - baseR - 5.2 * zoom]
+      ];
+      for (const [bx, by] of bCoords) {
+        ctx.beginPath();
+        ctx.arc(bx, by, blossomR, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
 
     if (plant.berries > 0 && s >= 2) {
       ctx.fillStyle = (this.biomeId === 'steppe') ? '#f97316' : '#dc2626';
       const berryR = 1.6 * zoom;
-
-      ctx.beginPath();
-      if (plant.berries >= 1) ctx.arc(cx - 3 * zoom, cy - baseR + 1 * zoom, berryR, 0, Math.PI * 2);
-      if (plant.berries >= 2) ctx.arc(cx + 3 * zoom, cy - baseR - 2 * zoom, berryR, 0, Math.PI * 2);
-      if (plant.berries >= 3) ctx.arc(cx, cy - baseR - 6 * zoom, berryR, 0, Math.PI * 2);
-      if (plant.berries >= 4) ctx.arc(cx - 2 * zoom, cy - baseR - 4 * zoom, berryR, 0, Math.PI * 2);
-      if (plant.berries >= 5) ctx.arc(cx + 2 * zoom, cy - baseR - 5 * zoom, berryR, 0, Math.PI * 2);
-      ctx.fill();
+      const berryCoords = [
+        [cx - 3 * zoom, cy - baseR + 1 * zoom],
+        [cx + 3 * zoom, cy - baseR - 2 * zoom],
+        [cx, cy - baseR - 6 * zoom],
+        [cx - 2 * zoom, cy - baseR - 4 * zoom],
+        [cx + 2 * zoom, cy - baseR - 5 * zoom]
+      ];
+      const count = Math.min(berryCoords.length, plant.berries);
+      for (let i = 0; i < count; i++) {
+        ctx.beginPath();
+        ctx.arc(berryCoords[i][0], berryCoords[i][1], berryR, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
 
     ctx.restore();
@@ -503,12 +513,17 @@ export const environmentRenderMethods = {
           ? `rgba(251, 207, 232, ${Math.min(0.92, w.spring)})`
           : `rgba(254, 249, 195, ${Math.min(0.88, w.spring)})`;
         const bRad = 1.6 * w.spring * zoom;
-        ctx.beginPath();
-        ctx.arc(crownX - crownR * 0.35, crownY - crownR * 0.15, bRad, 0, Math.PI * 2);
-        ctx.arc(crownX + crownR * 0.28, crownY - crownR * 0.32, bRad, 0, Math.PI * 2);
-        ctx.arc(crownX - crownR * 0.05, crownY - crownR * 0.55, bRad, 0, Math.PI * 2);
-        ctx.arc(crownX + crownR * 0.42, crownY + crownR * 0.1, bRad, 0, Math.PI * 2);
-        ctx.fill();
+        const treeBlossoms = [
+          [crownX - crownR * 0.35, crownY - crownR * 0.15],
+          [crownX + crownR * 0.28, crownY - crownR * 0.32],
+          [crownX - crownR * 0.05, crownY - crownR * 0.55],
+          [crownX + crownR * 0.42, crownY + crownR * 0.1]
+        ];
+        for (const [bx, by] of treeBlossoms) {
+          ctx.beginPath();
+          ctx.arc(bx, by, bRad, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
     }
 
