@@ -328,12 +328,16 @@ export const environmentRenderMethods = {
     ctx.fillStyle = foliageDark;
     ctx.beginPath();
     ctx.arc(cx - (2 + seed) * zoom, cy - baseR + 2 * zoom, baseR * 0.85, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
     ctx.arc(cx + (2.5 - seed) * zoom, cy - baseR + 1 * zoom, baseR * 0.85, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.fillStyle = foliageMid;
     ctx.beginPath();
     ctx.arc(cx, cy - baseR - 1 * zoom, baseR * 0.75, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
     ctx.arc(cx - 3 * zoom, cy - baseR - (2 + seed * 2) * zoom, baseR * 0.55, 0, Math.PI * 2);
     ctx.fill();
 
@@ -491,19 +495,27 @@ export const environmentRenderMethods = {
       ctx.fillStyle = cDark;
       ctx.beginPath();
       ctx.arc(crownX - crownR * 0.45, crownY + crownR * 0.2, crownR * 0.65, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
       ctx.arc(crownX + crownR * 0.45, crownY + crownR * 0.2, crownR * 0.7, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.fillStyle = cMid;
       ctx.beginPath();
       ctx.arc(crownX, crownY, crownR * 0.85, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
       ctx.arc(crownX - crownR * 0.35, crownY - crownR * 0.25, crownR * 0.6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
       ctx.arc(crownX + crownR * 0.3, crownY - crownR * 0.2, crownR * 0.65, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.fillStyle = cLight;
       ctx.beginPath();
       ctx.arc(crownX - crownR * 0.2, crownY - crownR * 0.45, crownR * 0.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
       ctx.arc(crownX + crownR * 0.2, crownY - crownR * 0.4, crownR * 0.45, 0, Math.PI * 2);
       ctx.fill();
 
