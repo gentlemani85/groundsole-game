@@ -532,12 +532,12 @@ function applyToolAtScreen(sx, sy) {
       tile.footprints = [];
       tile.isDesirePath = false;
       tile.flowerDots = [];
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 2; i++) {
         tile.flowerDots.push({
-          dx: (Math.random() - 0.5) * 22,
-          dy: (Math.random() - 0.5) * 11,
-          color: Math.random() < 0.5 ? '#f43f5e' : '#fbbf24',
-          size: 0.9 + Math.random() * 0.8
+          dx: (Math.random() - 0.5) * 18,
+          dy: (Math.random() - 0.5) * 9,
+          color: Math.random() < 0.65 ? '#f5f3e6' : '#dfc15b',
+          size: 0.65 + Math.random() * 0.35
         });
       }
     } else if (activeTool === 'shelter') {

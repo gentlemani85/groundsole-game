@@ -62,27 +62,27 @@ export const environmentRenderMethods = {
       let cSpring, cSummer;
 
       if (this.biomeId === 'steppe') {
-        // Mammut-Steppe: Frühling = frisches Steppengrün, Sommer = trockenes Strohgold
-        cSpring = [122 - factor * 38, 152 - factor * 36, 72 - factor * 28];
-        cSummer = [164 - factor * 42, 142 - factor * 38, 62 - factor * 26];
+        // Mammut-Steppe: Frühling = gedecktes Steppengrün, Sommer = helles, sonnengebleichtes Strohgold
+        cSpring = [114 - factor * 24, 130 - factor * 24, 80 - factor * 18];
+        cSummer = [168 - factor * 22, 152 - factor * 22, 92 - factor * 16];
       } else if (this.biomeId === 'forest') {
-        // Urwald: Frühling = leuchtendes Maigrün, Sommer = tiefer dunkler Waldschatten
-        cSpring = [48 - factor * 20, 118 + factor * 18, 46 + factor * 6];
-        cSummer = [28 - factor * 14, 78 + factor * 20, 26 + factor * 8];
+        // Urwald: Frühling = ruhiges Waldmoosgrün, Sommer = warmes, sonnendurchschienenes Waldgrün
+        cSpring = [58 - factor * 16, 96 - factor * 16, 52 - factor * 12];
+        cSummer = [84 - factor * 16, 114 - factor * 16, 62 - factor * 12];
       } else if (this.biomeId === 'karst_canyon') {
-        // Karst-Schlucht: Frühling = frische Almwiese, Sommer = sonnenwarmer Kalkrasen
-        cSpring = [82 - factor * 26, 134 - factor * 24, 88 - factor * 18];
-        cSummer = [114 - factor * 28, 116 - factor * 24, 86 - factor * 18];
+        // Karst-Schlucht: Frühling = gedeckte Almwiese, Sommer = heller, sonnenwarmer Kalkrasen
+        cSpring = [86 - factor * 20, 116 - factor * 20, 84 - factor * 16];
+        cSummer = [124 - factor * 20, 128 - factor * 20, 94 - factor * 14];
       } else {
         // Fluss-Aue (Standard):
-        // Frühling = leuchtend frisches, saftiges Maigrün
-        cSpring = [70 - factor * 44, 174 - factor * 58, 68 - factor * 40];
-        // Sommer = sonnenwarmes, reifes Gold-Oliv-Sommergras
-        cSummer = [148 - factor * 72, 148 - factor * 58, 52 - factor * 34];
+        // Frühling = ruhiges, natürliches Wiesen-/Salbeigrün (erdig, nicht grell)
+        cSpring = [84 - factor * 28, 126 - factor * 30, 72 - factor * 22];
+        // Sommer = die hellste, sonnigste Jahreszeit (warmes, lichtes Gold-/Weizengrün)
+        cSummer = [136 - factor * 24, 146 - factor * 24, 82 - factor * 18];
       }
 
-      const cAutumn = [148 - factor * 58, 116 - factor * 48, 56 - factor * 32];
-      const cWinter = [224 - factor * 28, 232 - factor * 24, 242 - factor * 18];
+      const cAutumn = [132 - factor * 32, 106 - factor * 26, 64 - factor * 18];
+      const cWinter = [222 - factor * 20, 228 - factor * 18, 236 - factor * 14];
       fillColor = blend4RGB(cSpring, cSummer, cAutumn, cWinter, w);
     } else if (tile.type === 'water') {
       const shimmer = Math.sin(this.waterPhase + gx * 0.8 + gy * 0.5) * 8;
@@ -149,8 +149,8 @@ export const environmentRenderMethods = {
       this.drawFootprints(cx, cy, tile.footprints, w);
     }
 
-    // Blumen (im Frühling in voller Blüte, im Sommer deutlich dezenter, zum Winter hin sanft ausblendend)
-    const flowerScale = w.spring * 1.45 + w.summer * 0.42 + w.autumn * 0.18;
+    // Dezente Wiesenkräuter-Blüten (natürlich klein, blenden zum Winter hin sanft aus)
+    const flowerScale = w.spring * 0.95 + w.summer * 0.65 + w.autumn * 0.20;
     if (flowerScale > 0.1 && tile.type === 'grass' && tile.flowerDots && tile.flowerDots.length > 0 && !tile.plant && !tile.poop) {
       this.drawNaturalFlowers(cx, cy, tile.flowerDots, flowerScale);
     }
@@ -302,26 +302,26 @@ export const environmentRenderMethods = {
     const w = seasonState.weights || { spring: 1, summer: 0, autumn: 0, winter: 0 };
     const isSteppe = (this.biomeId === 'steppe');
 
-    // Frühling: helles, frisches Austriebs-Grün | Sommer: tiefes, sattes Dunkelgrün
+    // Frühling: ruhiges Naturgrün | Sommer: warmes, sonnenbeschienenes Sommerlaub
     const foliageDark = blend4RGB(
-      isSteppe ? [48, 66, 28] : [34, 78, 26],
-      isSteppe ? [42, 52, 24] : [20, 48, 16],
-      [92, 45, 22],
-      [51, 65, 85],
+      isSteppe ? [54, 68, 34] : [38, 66, 30],
+      isSteppe ? [64, 76, 38] : [46, 74, 32],
+      [88, 52, 28],
+      [58, 70, 86],
       w
     );
     const foliageMid = blend4RGB(
-      isSteppe ? [76, 98, 42] : [54, 114, 38],
-      isSteppe ? [66, 80, 36] : [34, 72, 26],
-      [154, 68, 25],
-      [100, 116, 139],
+      isSteppe ? [78, 96, 46] : [58, 96, 44],
+      isSteppe ? [94, 108, 52] : [72, 108, 46],
+      [138, 76, 34],
+      [104, 118, 138],
       w
     );
     const foliageLight = blend4RGB(
-      isSteppe ? [112, 138, 62] : [88, 162, 58],
-      isSteppe ? [96, 114, 52] : [52, 102, 40],
-      [217, 119, 6],
-      [226, 232, 240],
+      isSteppe ? [108, 128, 64] : [84, 126, 58],
+      isSteppe ? [132, 144, 72] : [112, 144, 64],
+      [182, 112, 42],
+      [222, 228, 236],
       w
     );
 
@@ -346,25 +346,9 @@ export const environmentRenderMethods = {
     ctx.arc(cx - (0.5 + seed) * zoom, cy - baseR - 4 * zoom, baseR * 0.45, 0, Math.PI * 2);
     ctx.fill();
 
-    // Zarte rosa-weiße Frühlingsblüten am Strauch (blenden im Frühling sanft ein und zum Sommer hin aus)
-    if (w.spring > 0.12 && s >= 2) {
-      ctx.fillStyle = `rgba(253, 224, 235, ${Math.min(0.95, w.spring * 1.1)})`;
-      const blossomR = 1.45 * w.spring * zoom;
-      const bCoords = [
-        [cx - 2.5 * zoom, cy - baseR - 1 * zoom],
-        [cx + 2.2 * zoom, cy - baseR - 3 * zoom],
-        [cx - 0.5 * zoom, cy - baseR - 5.2 * zoom]
-      ];
-      for (const [bx, by] of bCoords) {
-        ctx.beginPath();
-        ctx.arc(bx, by, blossomR, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-
     if (plant.berries > 0 && s >= 2) {
-      ctx.fillStyle = (this.biomeId === 'steppe') ? '#f97316' : '#dc2626';
-      const berryR = 1.6 * zoom;
+      ctx.fillStyle = (this.biomeId === 'steppe') ? '#d97706' : '#b91c1c';
+      const berryR = 1.45 * zoom;
       const berryCoords = [
         [cx - 3 * zoom, cy - baseR + 1 * zoom],
         [cx + 3 * zoom, cy - baseR - 2 * zoom],
@@ -511,29 +495,29 @@ export const environmentRenderMethods = {
       }
     } else {
       // Laubbaum: Kontinuierliche 4-Phasen-Farbmischung
-      // Frühling: frisches, helles Maigrün | Sommer: tiefes, sattes Dunkelgrün | Herbst: Gold/Rostrot | Winter: Schnee/Raureif
+      // Frühling: gedecktes Naturgrün | Sommer: helles, sonnenbeschienenes Sommerlaub | Herbst: Kupfer/Bernstein | Winter: Schnee/Raureif
       const isSteppe = (this.biomeId === 'steppe');
       const isRedAutumn = (seed < 0.18);
 
       const cDark = blend4RGB(
-        isSteppe ? [48, 66, 28] : [28, 68, 22],
-        isSteppe ? [38, 48, 22] : [16, 40, 14],
-        isRedAutumn ? [124, 45, 18] : [113, 63, 18],
-        [51, 65, 85],
+        isSteppe ? [52, 66, 32] : [34, 62, 28],
+        isSteppe ? [64, 76, 36] : [44, 72, 30],
+        isRedAutumn ? [108, 48, 24] : [98, 62, 24],
+        [56, 68, 84],
         w
       );
       const cMid = blend4RGB(
-        isSteppe ? [76, 102, 42] : [48, 108, 34],
-        isSteppe ? [60, 74, 34] : [26, 60, 20],
-        isRedAutumn ? [194, 65, 12] : [180, 83, 9],
-        [71, 85, 105],
+        isSteppe ? [78, 96, 46] : [56, 94, 42],
+        isSteppe ? [96, 112, 52] : [74, 108, 46],
+        isRedAutumn ? [158, 68, 28] : [148, 88, 26],
+        [76, 88, 106],
         w
       );
       const cLight = blend4RGB(
-        isSteppe ? [116, 146, 58] : [86, 162, 52],
-        isSteppe ? [88, 106, 48] : [40, 88, 32],
-        isRedAutumn ? [249, 115, 22] : [245, 158, 11],
-        [241, 245, 249],
+        isSteppe ? [108, 128, 62] : [84, 124, 58],
+        isSteppe ? [136, 148, 72] : [118, 148, 68],
+        isRedAutumn ? [198, 102, 38] : [196, 128, 38],
+        [236, 242, 248],
         w
       );
 
@@ -563,25 +547,6 @@ export const environmentRenderMethods = {
       ctx.beginPath();
       ctx.arc(crownX + crownR * 0.2, crownY - crownR * 0.4, crownR * 0.45, 0, Math.PI * 2);
       ctx.fill();
-
-      // Frühlingsblüten in der Laubkrone (nur im Frühling sichtbar, blenden sanft zum Sommer hin aus)
-      if (w.spring > 0.15 && s >= 2) {
-        ctx.fillStyle = (seed < 0.2)
-          ? `rgba(251, 207, 232, ${Math.min(0.92, w.spring)})`
-          : `rgba(254, 249, 195, ${Math.min(0.88, w.spring)})`;
-        const bRad = 1.6 * w.spring * zoom;
-        const treeBlossoms = [
-          [crownX - crownR * 0.35, crownY - crownR * 0.15],
-          [crownX + crownR * 0.28, crownY - crownR * 0.32],
-          [crownX - crownR * 0.05, crownY - crownR * 0.55],
-          [crownX + crownR * 0.42, crownY + crownR * 0.1]
-        ];
-        for (const [bx, by] of treeBlossoms) {
-          ctx.beginPath();
-          ctx.arc(bx, by, bRad, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
     }
 
     ctx.restore();

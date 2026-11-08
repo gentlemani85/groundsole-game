@@ -260,16 +260,16 @@ export function createMap(biomeId = 'river_valley') {
         };
       }
 
-      // Blumen auf magerem Boden
+      // Dezente, natürliche Wildkräuterblüten (nur vereinzelt in gedecktem Cremeweiß & sanftem Ockergelb)
       const flowerDots = [];
-      if (npk < 32 && type === 'grass') {
-        const count = 2 + Math.floor(Math.random() * 3);
+      if (npk < 30 && type === 'grass' && Math.random() < 0.28) {
+        const count = 1 + Math.floor(Math.random() * 2);
         for (let i = 0; i < count; i++) {
           flowerDots.push({
-            dx: (Math.random() - 0.5) * 22,
-            dy: (Math.random() - 0.5) * 11,
-            color: biome.id === 'steppe' ? '#eab308' : (Math.random() < 0.5 ? '#f43f5e' : '#60a5fa'),
-            size: 0.9 + Math.random() * 0.7
+            dx: (Math.random() - 0.5) * 20,
+            dy: (Math.random() - 0.5) * 10,
+            color: Math.random() < 0.65 ? '#f5f3e6' : '#dfc15b',
+            size: 0.65 + Math.random() * 0.35
           });
         }
       }
@@ -397,14 +397,14 @@ export function updateEcology(map, dtSec, logEvent) {
                 ageTimer: 0
               };
               logEvent(`🌱 Ein junger Baumkeimling schlägt Wurzeln. [${x}, ${y}]`);
-            } else {
-              // Hauptsächlich blühende Magerwiese
-              for (let i = 0; i < 3; i++) {
+            } else if (Math.random() < 0.35) {
+              // Dezente Magerwiesen-Kräuter (Cremeweiß / sanftes Ocker)
+              for (let i = 0; i < 2; i++) {
                 tile.flowerDots.push({
-                  dx: (Math.random() - 0.5) * 20,
-                  dy: (Math.random() - 0.5) * 10,
-                  color: Math.random() < 0.5 ? '#f59e0b' : '#ec4899',
-                  size: 0.8 + Math.random() * 0.7
+                  dx: (Math.random() - 0.5) * 18,
+                  dy: (Math.random() - 0.5) * 9,
+                  color: Math.random() < 0.65 ? '#f5f3e6' : '#dfc15b',
+                  size: 0.65 + Math.random() * 0.35
                 });
               }
             }

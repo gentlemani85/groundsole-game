@@ -18,7 +18,7 @@
 | `src/human/actions.js` | 335 | Hominiden-Aktionsausführung bei Ankunft (onArrived) & Abschluss (finishAction) |
 | `src/human/social.js` | 103 | Soziale Rituale (Lagerfeuer-Kreis, Plaudern, Kinderspiel) & Geburt (giveBirth) |
 | `src/render.js` | 119 | Haupt-Renderer & Y+X Tiefensortierung (Occlusion) |
-| `src/render/environment.js` | 946 | Canvas-Zeichnung für Boden, Wasser, Blumen, Sträucher, Bäume, Felsen, Hütten & Feuer |
+| `src/render/environment.js` | 911 | Canvas-Zeichnung für Boden, Wasser, Blumen, Sträucher, Bäume, Felsen, Hütten & Feuer |
 | `src/render/animals.js` | 340 | Prozedurale Vektor-Zeichnung der 4 Wildtier-Arten (drawAnimal) |
 | `src/render/humans.js` | 209 | Prozedurale Vektor-Zeichnung der Hominiden, Werkzeuge, Traglinge & Icons (drawHuman) |
 | `src/main.js` | 618 | Browser-Einstieg, Game-Loop, DOM-Inspektor-Karten, Hitbox-Klick & Umwelt-Werkzeuge |
@@ -132,7 +132,7 @@
 - **L7**: `constructor(ctx, camera)`
 - **L13**: `render(map, humans, animals, hoveredGrid, selectedHumanId, dtSec, fireIntensity = 100)`
 
-### `src/render/environment.js` (946 Zeilen)
+### `src/render/environment.js` (911 Zeilen)
 - **L7**: `function blend4RGB(cSpring, cSummer, cAutumn, cWinter, w)`
 - **L15**: `function getLocalSeasonWeights(gx, gy)`
 - **L38**: `export const environmentRenderMethods =`
@@ -142,11 +142,11 @@
 - **L233**: `drawNaturalFlowers(cx, cy, dots, flowerScale = 1.0)`
 - **L248**: `drawOrganicPoop(cx, cy)`
 - **L263**: `drawOrganicBush(cx, cy, plant)`
-- **L386**: `drawOrganicTree(cx, cy, plant)`
-- **L591**: `drawNaturalRock(cx, cy, gx = 0, gy = 0, stoneStock = 8, maxStoneStock = 8)`
-- **L669**: `drawPrimitiveShelter(cx, cy, shelterData = null)`
-- **L768**: `drawCampfire(gx, gy, cx, cy, fireIntensity = 100)`
-- **L924**: `drawHoverCursor(gx, gy)`
+- **L370**: `drawOrganicTree(cx, cy, plant)`
+- **L556**: `drawNaturalRock(cx, cy, gx = 0, gy = 0, stoneStock = 8, maxStoneStock = 8)`
+- **L634**: `drawPrimitiveShelter(cx, cy, shelterData = null)`
+- **L733**: `drawCampfire(gx, gy, cx, cy, fireIntensity = 100)`
+- **L889**: `drawHoverCursor(gx, gy)`
 
 ### `src/render/animals.js` (340 Zeilen)
 - **L6**: `export const animalRenderMethods =`
